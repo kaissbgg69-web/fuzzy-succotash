@@ -1,0 +1,2489 @@
+--[[ pegasus_ui.lua | Pegasus UI v1.1 | UI-only recreation of the pegasus.tech menu | rayfield-style API ]]
+
+local PegasusUI = { __meta = { "Pegasus", "1.1.0" } }
+PegasusUI.__index = PegasusUI
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local TextService = game:GetService("TextService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+local LIN = Enum.EasingStyle.Linear
+local T = 0.15
+local TAB_T = 0.26
+local GUIDE_Z = 1000
+
+local DEFAULTS = {
+	Font = Enum.Font.Code, FontFace = nil, TextSize = 14,
+	Title = "pegasus.tech", Version = "v7n",
+	Outline = Color3.fromRGB(255, 255, 255), OutlineT = 0.95,
+	Background = Color3.fromRGB(11, 11, 13), BackgroundT = 0.04,
+	Element = Color3.fromRGB(16, 16, 19), ElementT = 0.25,
+	Border = Color3.fromRGB(255, 255, 255), BorderT = 0.91,
+	Inline = Color3.fromRGB(26, 26, 31), InlineT = 0.30,
+	HoveredElement = Color3.fromRGB(38, 38, 45), HoveredElementT = 0.12,
+	Text = Color3.fromRGB(255, 255, 255), TextT = 0.16,
+	TextInactive = Color3.fromRGB(255, 255, 255), TextInactiveT = 0.58,
+	TextStroke = Color3.fromRGB(0, 0, 0),
+	Accent = Color3.fromRGB(169, 196, 238),
+	Risky = Color3.fromRGB(224, 69, 90),
+	MenuTime = T, TabSlideTime = TAB_T, TabSlideStyle = LIN, IconAsset = "",
+}
+PegasusUI.Theme = setmetatable({}, { __index = DEFAULTS })
+local themeSubs = {}
+
+PegasusUI.Presets = {
+	Default = {},
+	["Pegasus Night"] = { Accent = Color3.fromRGB(169, 196, 238), Background = Color3.fromRGB(8, 8, 10), Inline = Color3.fromRGB(20, 20, 25), HoveredElement = Color3.fromRGB(31, 31, 40) },
+	Carbon = { Accent = Color3.fromRGB(200, 200, 200), Background = Color3.fromRGB(10, 10, 10), Text = Color3.fromRGB(230, 230, 230), Risky = Color3.fromRGB(208, 208, 208) },
+	Halo = { Accent = Color3.fromRGB(126, 201, 143), Background = Color3.fromRGB(7, 16, 11), Inline = Color3.fromRGB(15, 28, 20), HoveredElement = Color3.fromRGB(22, 40, 28) },
+	Ashen = { Accent = Color3.fromRGB(224, 181, 106), Background = Color3.fromRGB(13, 11, 8), Inline = Color3.fromRGB(26, 22, 15), HoveredElement = Color3.fromRGB(37, 31, 20), Risky = Color3.fromRGB(217, 123, 63) },
+	Midnight = { Accent = Color3.fromRGB(143, 126, 232), Background = Color3.fromRGB(9, 8, 18), Inline = Color3.fromRGB(19, 17, 40), HoveredElement = Color3.fromRGB(29, 26, 56) },
+}
+
+function PegasusUI.SetTheme(patch, animate)
+	local theme = PegasusUI.Theme
+	for k in pairs(theme) do
+		theme[k] = nil
+	end
+	for k, v in patch or {} do
+		theme[k] = v
+	end
+	for _, fn in themeSubs do
+		task.spawn(fn, theme, animate ~= false)
+	end
+end
+
+local function applyTheme()
+	PegasusUI.SetTheme(PegasusUI.Theme, false)
+end
+
+local function sub(fn)
+	table.insert(themeSubs, fn)
+	return fn
+end
+
+local function setFont(inst, theme)
+	if theme.FontFace then
+		inst.FontFace = theme.FontFace
+	else
+		inst.Font = theme.Font
+	end
+end
+
+local function esc(s)
+	if type(s) ~= "string" then
+		return tostring(s)
+	end
+	return (s:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
+end
+
+local function vp()
+	local cam = workspace.CurrentCamera
+	return cam and cam.ViewportSize or Vector2.new(1920, 1080)
+end
+
+local function tw(text, size, theme)
+	local ok, d = pcall(function()
+		if theme.FontFace then
+			return TextService:GetTextSize(text, size, theme.FontFace, Vector2.new(1e5, 1e5))
+		end
+		return TextService:GetTextSize(text, size, theme.Font, Vector2.new(1e5, 1e5))
+	end)
+	return ok and d.X or #text * size * 0.52
+end
+
+local function tween(inst, time, props, style)
+	if not inst or not inst.Parent and not inst:IsA("ScreenGui") then
+		return
+	end
+	local goals = {}
+	for k, v in props do
+		goals[k] = v
+	end
+	local t = TweenService:Create(inst, TweenInfo.new(math.max(time or T, 0), style or LIN), goals)
+	t:Play()
+	return t
+end
+
+local function make(class, props, parent)
+	local inst = Instance.new(class)
+	for k, v in props or {} do
+		if k ~= "Corner" and k ~= "Stroke" and k ~= "Parent" then
+			inst[k] = v
+		end
+	end
+	if props and props.Corner then
+		local c = Instance.new("UICorner")
+		c.CornerRadius = props.Corner
+		c.Parent = inst
+	end
+	if props and props.Stroke then
+		local s = Instance.new("UIStroke")
+		s.Thickness = props.Stroke.Thickness or 1
+		s.Color = props.Stroke.Color or Color3.new(1, 1, 1)
+		s.Transparency = props.Stroke.Transparency or 0
+		s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+		s.Parent = inst
+	end
+	if parent then
+		inst.Parent = parent
+	end
+	return inst
+end
+
+local function gui()
+	if PegasusUI._gui and PegasusUI._gui.Parent then
+		return PegasusUI._gui
+	end
+	local g = Instance.new("ScreenGui")
+	g.Name = "PegasusUI"
+	g.ResetOnSpawn = false
+	g.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	g.DisplayOrder = GUIDE_Z
+	-- executors: CoreGui first (survives resets, ignores Topbar+). PlayerGui as fallback.
+	if not pcall(function() g.Parent = game:GetService("CoreGui") end) then
+		pcall(function()
+			g.Parent = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:FindFirstChildOfClass("Gui")
+		end)
+	end
+	PegasusUI._gui = g
+	return g
+end
+
+local bindRegistry = {}
+
+local MENUS = { cur = nil }
+local function closeMenu()
+	local m = MENUS.cur
+	if m and m.Parent then
+		m:Destroy()
+	end
+	MENUS.cur = nil
+end
+
+local function menuBox(w, h, at, flipUp)
+	local theme = PegasusUI.Theme
+	local size = vp()
+	local y = flipUp and (at.Y - h - 4) or (at.Y + 2)
+	y = math.clamp(y, 6, math.max(6, size.Y - h - 6))
+	local x = math.clamp(at.X, 6, math.max(6, size.X - w - 6))
+	local f = make("Frame", {
+		Size = UDim2.fromOffset(w, h), Position = UDim2.fromOffset(x, y),
+		BackgroundTransparency = 1, ZIndex = GUIDE_Z + 20,
+	}, gui())
+	make("Frame", {
+		Size = UDim2.fromScale(1, 1), BackgroundColor3 = theme.Element, BackgroundTransparency = 0.02,
+		BorderSizePixel = 0, Corner = UDim.new(0, 4), ZIndex = GUIDE_Z + 20,
+		Stroke = { Thickness = 1, Color = theme.Border, Transparency = math.max(0, theme.BorderT - 0.06) },
+	}, f)
+	make("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingBottom = UDim.new(0, 3), Parent = f })
+	make("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = f })
+	return f
+end
+
+local function menuItem(parent, text, order, opts)
+	opts = opts or {}
+	local theme = PegasusUI.Theme
+	local b = make("TextButton", {
+		Text = esc(text), LayoutOrder = order, Size = UDim2.new(1, -6, 0, 19), Position = UDim2.fromOffset(3, 0),
+		BackgroundColor3 = theme.HoveredElement, BackgroundTransparency = 1, BorderSizePixel = 0,
+		Corner = UDim.new(0, 2), AutoButtonColor = false, Font = theme.Font, TextSize = 13, RichText = true,
+		TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = opts.Selected and theme.Accent or theme.Text,
+		TextTransparency = opts.Selected and 0 or 0.5, ZIndex = GUIDE_Z + 21,
+	}, parent)
+	make("UIPadding", { PaddingLeft = UDim.new(0, 8), Parent = b })
+	b.MouseEnter:Connect(function()
+		tween(b, 0.06, { BackgroundTransparency = theme.HoveredElementT })
+	end)
+	b.MouseLeave:Connect(function()
+		tween(b, 0.09, { BackgroundTransparency = 1 })
+	end)
+	if opts.Callback then
+		b.MouseButton1Click:Connect(function()
+			opts.Callback()
+		end)
+	end
+	return b
+end
+
+local ELEMENTS = {}
+local Base = {}
+
+function ELEMENTS.new(row, kind, flag)
+	row.Kind = kind
+	row.Flag = flag
+	table.insert(ELEMENTS, row)
+	return row
+end
+
+function ELEMENTS.attach(row)
+	setmetatable(row, { __index = function(r, k)
+		local v = Base[k]
+		if v ~= nil then
+			return v
+		end
+		local d = rawget(r, "_defaults")
+		return d and d[k]
+	end })
+	return row
+end
+
+function Base:SetKey(keycode, mode)
+	PegasusUI.SetKey(self, keycode, mode)
+end
+
+function Base:ClearKey()
+	PegasusUI.ClearKey(self)
+end
+
+function Base:Flash()
+	local theme = PegasusUI.Theme
+	tween(self.Container, 0.13, { BackgroundTransparency = theme.HoveredElementT })
+	task.delay(0.13, function()
+		if not self.Hovered then
+			tween(self.Container, 0.16, { BackgroundTransparency = 1 })
+		end
+	end)
+end
+
+local function destroyElement(row)
+	if row.Container and row.Container.Parent then
+		row.Container:Destroy()
+	end
+	if row._menu then
+		closeMenu()
+	end
+	local i = table.find(ELEMENTS, row)
+	if i then
+		table.remove(ELEMENTS, i)
+	end
+	if row.Window then
+		local j = table.find(row.Window._rows, row)
+		if j then
+			table.remove(row.Window._rows, j)
+		end
+	end
+end
+
+local function flagFor(section, text)
+	return (tostring(text):lower():gsub("[^%w]+", "_")) .. "_" .. tostring(section._id)
+end
+
+local function registerConfig(section, row, initial)
+	local w = section.Window
+	w._elements[row.Flag] = row
+	if initial ~= nil then
+		w._flags[row.Flag] = initial
+	end
+end
+
+local function finishElement(section, row, kind, opts, initial)
+	row.Flag = (opts and opts.Flag) or flagFor(section, row.Text or "")
+	section.Window._elements[row.Flag] = row
+	if initial ~= nil then
+		section.Window._flags[row.Flag] = initial
+	end
+	ELEMENTS.new(row, kind, row.Flag)
+	ELEMENTS.attach(row)
+	return row
+end
+
+local WINDOWS = {}
+
+-- window
+local function buildWindow(opts)
+	opts = opts or {}
+	local theme = PegasusUI.Theme
+	local w = setmetatable({}, { __index = PegasusUI })
+	w.Tabs = {}
+	w._rows = {}
+	w._elements = {}
+	w._flags = {}
+	w._tabIndex = 1
+	w._open = false
+	w._resizable = opts.Resizable ~= false
+
+	local size = opts.Size or Vector2.new(730, 402)
+	do -- never let the reference size overflow a phone screen
+		local v = vp()
+		if size.X > v.X * 0.94 then
+			local k = (v.X * 0.94) / size.X
+			size = Vector2.new(v.X * 0.94, math.max(320, size.Y * k))
+		end
+	end
+	if opts.Compact or (UserInputService.TouchEnabled and opts.MobileAutoCompact ~= false) then
+		local v = vp()
+		size = Vector2.new(math.clamp(v.X * 0.94, 420, 760), math.clamp(v.Y * 0.72, 320, 560))
+	end
+
+	local Outer = make("Frame", {
+		Name = "PegasusWindow", AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(size.X, size.Y),
+		BackgroundTransparency = 1, Visible = false, ZIndex = 1,
+	}, gui())
+	w.Outer = Outer
+
+	make("ImageLabel", {
+		Name = "Shadow", BackgroundTransparency = 1, Image = "rbxassetid://6014261993",
+		ImageColor3 = Color3.new(), ImageTransparency = 0.18, ScaleType = Enum.ScaleType.Slice,
+		SliceCenter = Rect.new(49, 49, 149, 149), Size = UDim2.new(1, 30, 1, 30),
+		Position = UDim2.fromOffset(-15, -12), ZIndex = 1,
+	}, Outer)
+
+	local Inner = make("Frame", {
+		Name = "Inner", Size = UDim2.fromScale(1, 1), BackgroundColor3 = theme.Background,
+		BackgroundTransparency = theme.BackgroundT, BorderSizePixel = 0, Corner = UDim.new(0, 7),
+		Stroke = { Thickness = 1, Color = theme.Outline, Transparency = theme.OutlineT }, ZIndex = 2,
+	}, Outer)
+	w.Inner = Inner
+
+	local Bar = make("Frame", { Name = "Title", Size = UDim2.new(1, 0, 0, 29), BackgroundTransparency = 1, ZIndex = 3 }, Inner)
+	local Mark = make("Frame", { Name = "Mark", Size = UDim2.fromOffset(15, 15), Position = UDim2.fromOffset(12, 7), BackgroundTransparency = 1, ZIndex = 4 }, Bar)
+	local function wedge(rot, x, y, wid, hei, tr)
+		return make("Frame", {
+			Size = UDim2.fromOffset(wid, hei), Position = UDim2.fromOffset(x, y), Rotation = rot,
+			BackgroundColor3 = theme.Accent, BackgroundTransparency = tr, BorderSizePixel = 0,
+			Corner = UDim.new(1, 0), ZIndex = 4,
+		}, Mark)
+	end
+	local wedges = {
+		wedge(-24, 0, 3, 9, 4, 0.25), wedge(-16, 1, 7, 8, 3.5, 0.42), wedge(-9, 2, 10.5, 7, 3, 0.6),
+		wedge(28, 7.5, 2, 6, 3.2, 0.2), wedge(20, 7.5, 6, 6.5, 3.2, 0.4),
+	}
+	local Icon = make("ImageLabel", {
+		Name = "Icon", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, ZIndex = 5,
+	}, Mark)
+
+	local TitleText = make("TextLabel", {
+		Name = "Title", Size = UDim2.new(1, -120, 1, 0), Position = UDim2.fromOffset(33, 0), BackgroundTransparency = 1,
+		Font = theme.Font, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left, RichText = true,
+		Text = esc(opts.Title or theme.Title), TextColor3 = theme.Text, TextTransparency = theme.TextInactiveT, ZIndex = 4,
+	}, Bar)
+	local VerText = make("TextLabel", {
+		Name = "Version", Size = UDim2.fromOffset(0, 29), AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -10, 0, 0), BackgroundTransparency = 1, Font = theme.Font, TextSize = 12,
+		TextColor3 = theme.Text, TextTransparency = 0.75, RichText = true, Text = esc(opts.Version or theme.Version), ZIndex = 4,
+	}, Bar)
+	local Drag = make("TextButton", {
+		Name = "Drag", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "",
+		AutoButtonColor = false, Active = true, ZIndex = 5,
+	}, Bar)
+
+	local Body = make("Frame", {
+		Name = "Body", Position = UDim2.fromOffset(0, 29), Size = UDim2.new(1, -18, 1, -61),
+		BackgroundTransparency = 1, ClipsDescendants = true, ZIndex = 3,
+	}, Inner)
+	w.Body = Body
+
+	local TabBar = make("Frame", {
+		Name = "Tabs", Position = UDim2.new(0, 9, 1, -32), Size = UDim2.new(1, -18, 0, 27),
+		BackgroundTransparency = 1, ZIndex = 3,
+	}, Inner)
+	make("Frame", {
+		Size = UDim2.new(1, 0, 0, 1), BackgroundColor3 = theme.Border, BackgroundTransparency = theme.BorderT,
+		BorderSizePixel = 0, ZIndex = 3,
+	}, TabBar)
+	make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, SortOrder = Enum.SortOrder.LayoutOrder, Parent = TabBar })
+	local HL = make("Frame", {
+		Name = "Hl", Size = UDim2.fromOffset(0, 2), Position = UDim2.fromScale(0, 1), AnchorPoint = Vector2.new(0, 1),
+		BackgroundColor3 = theme.Accent, BorderSizePixel = 0, Corner = UDim.new(0, 2), ZIndex = 4,
+	}, TabBar)
+	w._hl = HL
+
+	if theme.IconAsset ~= "" then
+		Icon.Image = theme.IconAsset
+		Icon.Visible = true
+		for _, wedgeFrame in wedges do
+			wedgeFrame.Visible = false
+		end
+	end
+
+	-- resize grip: bottom-right, works with mouse and touch
+	local Grip = make("TextButton", {
+		Name = "Grip", Size = UDim2.fromOffset(20, 20), AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "", Active = true, ZIndex = 6,
+	}, Inner)
+	local gripReady = false
+	if w._resizable then
+		for i = 0, 1 do
+			make("Frame", {
+				Size = UDim2.fromOffset(9 - i * 4, 1.6), Position = UDim2.fromOffset(4 + i * 4, 14 - i * 4),
+				Rotation = -45, AnchorPoint = Vector2.new(0, 0), BackgroundColor3 = theme.Border,
+				BackgroundTransparency = theme.BorderT + 0.15, BorderSizePixel = 0, Corner = UDim.new(1, 0), ZIndex = 6,
+			}, Grip)
+		end
+		gripReady = true
+	end
+
+	-- open / close
+	function w:Open()
+		if w._open then
+			return
+		end
+		w._open = true
+		Outer.Visible = true
+		Inner.Size = UDim2.fromScale(1, 0.965)
+		Inner.BackgroundTransparency = 1
+		tween(Inner, theme.MenuTime, { Size = UDim2.fromScale(1, 1), BackgroundTransparency = theme.BackgroundT })
+		w:_refreshBinds()
+	end
+
+	function w:Close()
+		if not w._open then
+			return
+		end
+		w._open = false
+		tween(Inner, theme.MenuTime, { Size = UDim2.fromScale(1, 0.965), BackgroundTransparency = 1 })
+		task.delay(theme.MenuTime, function()
+			if not w._open then
+				Outer.Visible = false
+			end
+			w:_refreshBinds()
+		end)
+	end
+
+	function w:Toggle()
+		if w._open then
+			w:Close()
+		else
+			w:Open()
+		end
+	end
+
+	function w:IsOpen()
+		return w._open
+	end
+
+	-- size / mobile
+	local MIN_SIZE, MARGIN = Vector2.new(520, 330), 24
+	function w:SetSize(vec)
+		local v = vp()
+		local x = math.clamp(vec.X, MIN_SIZE.X, v.X - MARGIN)
+		local y = math.clamp(vec.Y, MIN_SIZE.Y, v.Y - MARGIN)
+		size = Vector2.new(x, y)
+		tween(Outer, 0.18, { Size = UDim2.fromOffset(x, y) })
+		w:_saveSize()
+	end
+
+	function w:GetSize()
+		return size
+	end
+
+	function w:SetCompact(on)
+		local v = vp()
+		if on then
+			w:SetSize(Vector2.new(v.X * 0.94, v.Y * 0.72))
+		else
+			w:SetSize(Vector2.new(730, 402))
+		end
+	end
+
+	function w:_sizePath()
+		return "pegasus-ui/window.json"
+	end
+
+	function w:_saveSize()
+		pcall(function()
+			if writefile and isfolder and not isfolder("pegasus-ui") then
+				makefolder("pegasus-ui")
+			end
+			if writefile then
+				writefile(w:_sizePath(), string.format('{"x":%d,"y":%d,"px":%d,"py":%d}',
+					math.round(size.X), math.round(size.Y),
+					math.round(Outer.Position.X.Scale * 1e4), math.round(Outer.Position.Y.Scale * 1e4)))
+			end
+		end)
+	end
+
+	function w:_loadSize()
+		pcall(function()
+			if readfile and isfile and isfile(w:_sizePath()) then
+				local str = readfile(w:_sizePath())
+				local x = tonumber(str:match('"x":(%d+)'))
+				local y = tonumber(str:match('"y":(%d+)'))
+				if x and y then
+					Outer.Size = UDim2.fromOffset(x, y)
+					size = Vector2.new(x, y)
+				end
+			end
+		end)
+	end
+
+	function w:SetMobileLayout(on)
+		if on then
+			w:SetCompact(true)
+			w:MakeResizable(true)
+		else
+			w:SetSize(Vector2.new(730, 402))
+		end
+	end
+
+	function w:MakeResizable(on)
+		w._resizable = on
+		Grip.Active = on
+		Grip.Visible = on
+		w._gripReady = on
+	end
+
+	-- drag + resize input
+	local dragging, sizing, startP, startOuter, startSize
+	w:_loadSize()
+
+	-- keybinds
+	w._conns = {}
+	function w:Bind(keycode, fn)
+		local conn = UserInputService.InputBegan:Connect(function(i, gp)
+			if i.UserInputType == Enum.UserInputType.Keyboard and i.KeyCode == keycode and not gp then
+				fn()
+			end
+		end)
+		table.insert(w._conns, conn)
+		return conn
+	end
+
+	if opts.Keybind then
+		w:Bind(opts.Keybind, function()
+			w:Toggle()
+		end)
+		w._toggleKey = opts.Keybind
+	end
+
+	function w:SetToggleKey(keycode)
+		for _, c in w._conns do
+			c:Disconnect()
+		end
+		w._conns = {}
+		w._toggleKey = keycode
+		if keycode then
+			w:Bind(keycode, function()
+				w:Toggle()
+			end)
+		end
+		for _, row in w._rows do
+			if row.IsMenuBind then
+				row:SetText(keycode and keycode.Name or "None")
+			end
+		end
+	end
+
+	local wantBtn = opts.ToggleButton
+	if wantBtn == "auto" or wantBtn == nil then
+		wantBtn = UserInputService.TouchEnabled
+	end
+	if wantBtn and UserInputService.TouchEnabled then
+		local b = make("TextButton", {
+			Name = "MobileToggle", Size = UDim2.fromOffset(48, 48), AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -14, 0, 14), BackgroundColor3 = theme.Background, BackgroundTransparency = 0.12,
+			BorderSizePixel = 0, Corner = UDim.new(0, 10), Font = theme.Font, TextSize = 11, Text = "menu",
+			TextColor3 = theme.Text, TextTransparency = theme.TextT, ZIndex = GUIDE_Z,
+			Stroke = { Thickness = 1, Color = theme.Border, Transparency = theme.BorderT },
+		}, gui())
+		b.MouseButton1Click:Connect(function()
+			w:Toggle()
+		end)
+		w._mobileBtn = b
+	end
+
+	sub(function(t)
+		Inner.BackgroundColor3 = t.Background
+		Inner.BackgroundTransparency = t.BackgroundT
+			local innerStroke = Inner:FindFirstChildOfClass("UIStroke")
+		if innerStroke then
+			innerStroke.Color = t.Outline
+		end
+		TitleText.TextColor3 = t.Text
+		TitleText.TextTransparency = t.TextInactiveT
+		VerText.TextColor3 = t.Text
+		HL.BackgroundColor3 = t.Accent
+		setFont(TitleText, t)
+		setFont(VerText, t)
+		for _, wedgeFrame in Mark:GetChildren() do
+			if wedgeFrame:IsA("Frame") then
+				wedgeFrame.BackgroundColor3 = t.Accent
+			end
+		end
+		local useImage = (t.IconAsset or "") ~= ""
+		if useImage then
+			Icon.Image = t.IconAsset
+		end
+		Icon.Visible = useImage
+		for _, wedgeFrame in wedges do
+			wedgeFrame.Visible = not useImage
+		end
+	end)
+
+	return w
+end
+
+-- tab + slide effect
+local function buildTab(w, name, opts)
+	opts = opts or {}
+	local theme = PegasusUI.Theme
+	local tab = setmetatable({}, { __index = PegasusUI })
+	tab.Name = name
+	tab.Window = w
+	tab._sections = {}
+	tab._id = #w.Tabs + 1
+
+	local Panel = make("Frame", {
+		Name = "Tab_" .. name, Size = UDim2.fromScale(1, 1), Position = UDim2.fromScale(1, 0),
+		BackgroundTransparency = 1, ClipsDescendants = true, Visible = false, ZIndex = 3,
+	}, w.Body)
+	tab.Panel = Panel
+
+	for i = 1, 2 do
+		local col = make("ScrollingFrame", {
+			Name = "Col" .. i, Size = UDim2.new(0.5, -5, 1, 0), Position = UDim2.fromScale(i == 1 and 0 or 0.5, 0),
+			BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 2,
+			AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
+			CanvasSize = UDim2.new(0, 0, 0, 0), ZIndex = 4,
+		}, Panel)
+		make("UIListLayout", { Padding = UDim.new(0, 10), SortOrder = Enum.SortOrder.LayoutOrder, Parent = col })
+		make("UIPadding", { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 8), Parent = col })
+		col.ScrollBarImageColor3 = theme.Accent
+		col.ScrollBarImageTransparency = 0.55
+		tab["_col" .. i] = col
+	end
+
+	local Btn = make("TextButton", {
+		Name = "TabBtn_" .. name, LayoutOrder = #w.Tabs, Size = UDim2.new(1, 0, 1, 0),
+		BackgroundColor3 = theme.HoveredElement, BackgroundTransparency = 1, BorderSizePixel = 0,
+		AutoButtonColor = false, Text = "", Corner = UDim.new(0, 3), ZIndex = 4,
+	}, w.TabBar)
+	tab.Button = Btn
+	local Lbl = make("TextLabel", {
+		Name = "Label", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Font = theme.Font,
+		TextSize = 13, RichText = true, Text = esc(name), TextColor3 = theme.Text,
+		TextTransparency = theme.TextInactiveT, ZIndex = 5,
+	}, Btn)
+	tab.Label = Lbl
+	make("Frame", {
+		Name = "Sep", Size = UDim2.new(0, 1, 0, 13), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0),
+		BackgroundColor3 = theme.Border, BackgroundTransparency = theme.BorderT, BorderSizePixel = 0, ZIndex = 5,
+	}, Btn)
+
+	local function relayout()
+		for i, t in w.Tabs do
+			t.Button.Size = UDim2.new(1 / #w.Tabs, 0, 1, 0)
+			t.Button.LayoutOrder = i
+		end
+	end
+
+	function tab:Activate(instant)
+		local idx = table.find(w.Tabs, tab) or 1
+		local prev = w.Tabs[w._tabIndex]
+		local backwards = prev and (table.find(w.Tabs, prev) or 1) > idx
+		w._tabIndex = idx
+		w._active = tab
+
+		local time = instant and 0 or theme.TabSlideTime
+		local style = theme.TabSlideStyle or LIN
+		for _, t in w.Tabs do
+			local on = t == tab
+			tween(t.Label, time, { TextTransparency = on and 0.10 or theme.TextInactiveT })
+			tween(t.Button, time, { BackgroundTransparency = on and 0.55 or 1 })
+		end
+		w._hl.Size = UDim2.new(1 / #w.Tabs, 0, 0, 2)
+		local hlPos = UDim2.new((idx - 1) / #w.Tabs, 6, 1, 0)
+		if instant then
+			w._hl.Position = hlPos
+		else
+			tween(w._hl, time, { Position = hlPos }, style)
+		end
+
+		if prev and prev ~= tab then
+			prev.Panel.Position = UDim2.fromScale(0, 0)
+			if instant then
+				prev.Panel.Visible = false
+				prev.Panel.Position = UDim2.fromScale(1, 0)
+			else
+				tween(prev.Panel, time, { Position = UDim2.fromScale(backwards and 1 or -1, 0) }, style)
+				task.delay(time, function()
+					if w._active ~= prev then
+						prev.Panel.Visible = false
+						prev.Panel.Position = UDim2.fromScale(1, 0)
+					end
+				end)
+			end
+		end
+
+		Panel.Visible = true
+		if instant then
+			Panel.Position = UDim2.fromScale(0, 0)
+		else
+			Panel.Position = UDim2.fromScale(backwards and -1 or 1, 0)
+			tween(Panel, time, { Position = UDim2.fromScale(0, 0) }, style)
+		end
+	end
+
+	Btn.MouseButton1Click:Connect(function()
+		if w._active ~= tab then
+			tab:Activate()
+		end
+	end)
+
+	relayout()
+	sub(function(t)
+		Lbl.TextColor3 = t.Text
+		Lbl.Font = t.Font
+		Btn.BackgroundColor3 = t.HoveredElement
+		Panel.Size = UDim2.fromScale(1, 1)
+	end)
+
+	return tab
+end
+
+-- groupbox
+local function buildSection(tab, title, colIndex, opts)
+	opts = opts or {}
+	local theme = PegasusUI.Theme
+	local w = tab.Window
+	local col = tab["_col" .. tostring(math.clamp(colIndex, 1, 2))] or tab._col1
+
+	local Box = make("Frame", {
+		Name = "Box_" .. tostring(title), LayoutOrder = #tab._sections + 1,
+		Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = theme.Element, BackgroundTransparency = theme.ElementT, BorderSizePixel = 0,
+		Corner = UDim.new(0, 4), Stroke = { Thickness = 1, Color = theme.Border, Transparency = theme.BorderT },
+		ZIndex = 4,
+	}, col)
+	make("Frame", {
+		Name = "Head", Size = UDim2.new(1, 0, 0, 20), BackgroundColor3 = theme.Inline,
+		BackgroundTransparency = theme.InlineT, BorderSizePixel = 0, Corner = UDim.new(0, 3),
+		ZIndex = 5,
+	}, Box)
+	local Head = make("TextLabel", {
+		Name = "Title", Size = UDim2.new(1, -16, 1, 0), Position = UDim2.fromOffset(8, 0), BackgroundTransparency = 1,
+		Font = theme.Font, TextSize = 13, RichText = true, TextXAlignment = Enum.TextXAlignment.Left,
+		Text = esc(title), TextColor3 = theme.Text, TextTransparency = 0.26, ZIndex = 6,
+	}, Box:FindFirstChild("Head"))
+	make("Frame", {
+		Size = UDim2.new(1, 0, 0, 1), Position = UDim2.fromScale(0, 1), BackgroundColor3 = theme.Border,
+		BackgroundTransparency = theme.BorderT, BorderSizePixel = 0, ZIndex = 6,
+	}, Box:FindFirstChild("Head"))
+
+	local Rows = make("Frame", {
+		Name = "Rows", Position = UDim2.fromOffset(0, 21), Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, ZIndex = 4,
+	}, Box)
+	make("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Rows })
+	make("UIPadding", { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 4), Parent = Rows })
+
+	local gb = setmetatable({ Title = title, Box = Box, Rows = Rows, Tab = tab, Window = w, _n = 0, _id = tab._id }, { __index = PegasusUI._gb })
+	table.insert(tab._sections, s)
+
+	gb.SetFill = function(_, on)
+		if on then
+			Box.AutomaticSize = Enum.AutomaticSize.None
+			Box.Size = UDim2.new(1, 0, 1, 0)
+			Rows.Size = UDim2.new(1, 0, 1, -23)
+			Rows.AutomaticSize = Enum.AutomaticSize.None
+		else
+			Box.AutomaticSize = Enum.AutomaticSize.Y
+			Box.Size = UDim2.new(1, 0, 0, 0)
+			Rows.AutomaticSize = Enum.AutomaticSize.Y
+		end
+	end
+
+	-- base row shared by every element
+	function s:Row(text, o)
+		o = o or {}
+		local hasValue = o.hasValue ~= false
+		local height = o.Height or (o.twoLine and 40 or 21)
+		local pad = 8 + (o.Indent or 0) * 11
+		local row = {}
+		row.Window = w
+		row.Section = s
+		row.Text = text
+		row.pad = pad
+		row.Hovered = false
+		row.Container = make("TextButton", {
+			Name = o.Name or "Element", LayoutOrder = gb._n + 1, Size = UDim2.new(1, 0, 0, height),
+			BackgroundColor3 = theme.HoveredElement, BackgroundTransparency = 1, BorderSizePixel = 0,
+			AutoButtonColor = false, Text = "", Font = theme.Font, TextSize = 1, Corner = UDim.new(0, 3), ZIndex = 5,
+		}, Rows)
+		row.Label = make("TextLabel", {
+			Name = "Label", Position = UDim2.fromOffset(pad, 0),
+			Size = hasValue and UDim2.new(1, -96 - pad, 1, 0) or UDim2.new(1, -pad - 8, 1, 0),
+			BackgroundTransparency = 1, Font = theme.Font, TextSize = theme.TextSize, TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd, RichText = true, Text = esc(text), TextColor3 = theme.Text,
+			TextTransparency = o.Inactive and theme.TextInactiveT or theme.TextT, ZIndex = 6,
+		}, row.Container)
+		if o.twoLine then
+			row.Label.Size = UDim2.new(1, -16 - pad, 0, 17)
+			row.Label.Position = UDim2.fromOffset(pad, 1)
+		end
+		row.Container.MouseEnter:Connect(function()
+			row.Hovered = true
+			tween(row.Container, 0.08, { BackgroundTransparency = theme.HoveredElementT })
+		end)
+		row.Container.MouseLeave:Connect(function()
+			row.Hovered = false
+			tween(row.Container, 0.10, { BackgroundTransparency = 1 })
+		end)
+		function row:Tip(txt)
+			if row._tip then
+				row._tip.Text = esc(txt)
+				return
+			end
+			row._tip = make("TextLabel", {
+				Name = "Tip", Size = UDim2.new(1, -16, 0, 13), Position = UDim2.fromOffset(8, height - 12),
+				BackgroundTransparency = 1, Font = theme.Font, TextSize = 11, RichText = true,
+				TextXAlignment = Enum.TextXAlignment.Left, Text = esc(txt), TextColor3 = theme.Accent,
+				TextTransparency = 0.35, ZIndex = 6,
+			}, row.Container)
+		end
+		function row:Field(txt, o2)
+			o2 = o2 or {}
+			local size = math.max(46, tw(txt or "", o2.Size or 13, theme) + 16)
+			local f = make("TextLabel", {
+				Name = "Value", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -(o2.Indicator and 26 or 8), 0.5, 0),
+				Size = UDim2.fromOffset(size, 17), BackgroundTransparency = 1, Font = theme.Font, TextSize = o2.Size or 13,
+				RichText = true, Text = esc(txt or ""), TextColor3 = o2.Color or theme.Text,
+				TextTransparency = o2.Transparency or theme.TextT, ZIndex = 7,
+			}, row.Container)
+			f.BackgroundTransparency = 1
+			row.FieldFrame = f
+			function row:SetText(t)
+				f.Text = esc(t)
+				f.Size = UDim2.fromOffset(math.max(46, tw(t, o2.Size or 13, theme) + 16), 17)
+			end
+			function row:SetColor(col, tr)
+				tween(f, 0.12, { TextColor3 = col, TextTransparency = tr or 0.1 })
+			end
+			return f
+		end
+		function row:Swatch(col)
+			local sq = make("Frame", {
+				Name = "Dot", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0),
+				Size = UDim2.fromOffset(14, 9), BackgroundColor3 = col, BorderSizePixel = 0, Corner = UDim.new(0, 2), ZIndex = 7,
+			}, row.Container)
+			return sq
+		end
+		function row:Destroy()
+			destroyElement(row)
+		end
+		w._rows[#w._rows + 1] = row
+		gb._n += 1
+		return row
+	end
+
+	sub(function(t)
+		Box.BackgroundColor3 = t.Element
+		Box.BackgroundTransparency = t.ElementT
+		local boxStroke = Box:FindFirstChildOfClass("UIStroke")
+		if boxStroke then
+			boxStroke.Color = t.Border
+		end
+		local head = Box:FindFirstChild("Head")
+		if head then
+			head.BackgroundColor3 = t.Inline
+			head.BackgroundTransparency = t.InlineT
+		end
+		Head.TextColor3 = t.Text
+		Head.Font = t.Font
+	end)
+
+	return gb
+end
+
+-- elements
+local function addToggle(s, text, opts)
+	opts = opts or {}
+	local w = s.Window
+	local theme = PegasusUI.Theme
+	local row = s:Row(text, { Name = "Toggle", Indent = opts.Indent, Inactive = opts.Inactive })
+	row._defaults = { Name = text }
+	local check = make("Frame", {
+		Name = "Check", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(12, 12),
+		BackgroundColor3 = theme.Inline, BackgroundTransparency = 0.15, BorderSizePixel = 0, Corner = UDim.new(0, 2),
+		Stroke = { Thickness = 1, Color = theme.Border, Transparency = math.max(0, theme.BorderT - 0.16) }, ZIndex = 6,
+	}, row.Container)
+	local fill = make("Frame", {
+		Name = "Fill", Size = UDim2.fromScale(1, 1), BackgroundColor3 = theme.Text, BackgroundTransparency = 1,
+		BorderSizePixel = 0, Corner = UDim.new(0, 2), ZIndex = 7,
+	}, check)
+	local dot = opts.Swatch and row:Swatch(opts.SwatchColor or theme.Risky) or nil
+	row.Value = opts.Default and true or false
+
+	if opts.HoverContent then
+		row:Tip(opts.HoverContent)
+	end
+
+	function row:Set(v, silent)
+		v = v and true or false
+		local changed = row.Value ~= v
+		row.Value = v
+		tween(fill, 0.10, { BackgroundTransparency = v and 0 or 1 })
+		tween(check, 0.10, { BackgroundTransparency = v and 0.05 or 0.15 })
+		tween(row.Label, 0.10, { TextTransparency = v and theme.TextT or (opts.Inactive and theme.TextInactiveT or theme.TextT) })
+		if dot then
+			tween(dot, 0.10, { BackgroundTransparency = v and 0 or 1 })
+		end
+		w._flags[row.Flag or flagFor(s, text)] = v
+		if changed and not silent and opts.Callback then
+			task.spawn(opts.Callback, v)
+		end
+		return v
+	end
+
+	function row:GetValue()
+		return row.Value
+	end
+
+	function row:Toggle()
+		row:Set(not row.Value)
+		row:Flash()
+	end
+
+	row.Container.MouseButton1Click:Connect(function()
+		row:Toggle()
+	end)
+
+	if opts.SaveFlag == false then
+		ELEMENTS.attach(row)
+	else
+		finishElement(s, row, "toggle", opts, row.Value)
+	end
+
+	if opts.Keybind then
+		row:SetKey(opts.Keybind, opts.KeybindMode or "Toggle")
+	end
+	return row
+end
+
+function PegasusUI.SetKey(row, keycode, mode)
+	local w = row.Window
+	row.KeyCode = keycode
+	row.Mode = mode or row.Mode or "Toggle"
+	if row._bindConn then
+		row._bindConn:Disconnect()
+		row._bindConn = nil
+	end
+	if keycode then
+		table.insert(w._conns, w:Bind(keycode, function()
+			if row.Mode == "Never" then
+				return
+			end
+			if row.Mode == "Hold" then
+				row:Set(true, true)
+				task.spawn(function()
+					repeat
+						task.wait()
+					until not UserInputService:IsKeyDown(keycode)
+					row:Set(false, true)
+				end)
+			else
+				row:Set(not row.Value)
+			end
+			if row.Flash then
+				row:Flash(row)
+			end
+		end))
+	end
+	bindRegistry[row] = true
+	w:_refreshBinds()
+end
+
+function PegasusUI.ClearKey(row)
+	row.KeyCode = nil
+	row.Mode = "Toggle"
+	bindRegistry[row] = nil
+	if row.Window then
+		row.Window:_refreshBinds()
+	end
+end
+
+local function addSlider(s, text, opts)
+	opts = opts or {}
+	local w = s.Window
+	local theme = PegasusUI.Theme
+	local row = s:Row(text, { Name = "Slider", Indent = opts.Inactive and 0 or 0, twoLine = true, Height = 40 })
+	local min, max, step = opts.Min or 0, opts.Max or 100, (opts.Step or opts.Increment) or 1
+	row.Value = opts.Default or min
+	row.Suffix = opts.Suffix or ""
+	row.Decimals = opts.Decimals
+
+	local body = make("Frame", {
+		Name = "Body", Position = UDim2.fromOffset(8, 18), Size = UDim2.new(1, -16, 0, 20),
+		BackgroundTransparency = 1, ZIndex = 5,
+	}, row.Container)
+	local track = make("Frame", {
+		Name = "Track", Position = UDim2.new(0, 0, 0, 10), Size = UDim2.new(1, 0, 0, 4),
+		BackgroundColor3 = theme.Border, BackgroundTransparency = theme.BorderT + 0.02, BorderSizePixel = 0,
+		Corner = UDim.new(1, 0), ZIndex = 5,
+	}, body)
+	local fill = make("Frame", {
+		Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = theme.Accent,
+		BorderSizePixel = 0, Corner = UDim.new(1, 0), ZIndex = 6,
+	}, track)
+	local knob = make("Frame", {
+		Name = "Knob", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(6, 9),
+		BackgroundColor3 = theme.Text, BorderSizePixel = 0, Corner = UDim.new(0, 2), ZIndex = 7,
+		Stroke = { Thickness = 1, Color = Color3.new(), Transparency = 0.45 },
+	}, track)
+	local read = make("TextLabel", {
+		Name = "Readout", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 5), Size = UDim2.fromOffset(0, 12),
+		BackgroundTransparency = 1, Font = theme.Font, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = theme.TextInactive, TextTransparency = theme.TextInactiveT, RichText = true, Text = "0", ZIndex = 6,
+	}, body)
+
+	local function fmt(v)
+		if opts.Format then
+			return tostring(opts.Format(v))
+		elseif row.Decimals then
+			return string.format("%." .. row.Decimals .. "f", v)
+		elseif step >= 1 then
+			return string.format("%.0f", v)
+		end
+		return tostring(math.round(v * 100) / 100)
+	end
+
+	function row:Render()
+		local p = max == min and 0 or math.clamp((row.Value - min) / (max - min), 0, 1)
+		fill.Size = UDim2.fromScale(p, 1)
+		knob.Position = UDim2.fromScale(p, 0.5)
+		read.Text = esc(fmt(row.Value) .. row.Suffix)
+	end
+	row:Render()
+
+	function row:Set(v, silent)
+		v = math.clamp(tonumber(v) or min, min, max)
+		if step > 0 then
+			v = math.round(v / step) * step
+		end
+		v = math.clamp(v, min, max)
+		local changed = row.Value ~= v
+		row.Value = v
+		row:Render()
+		w._flags[row.Flag] = v
+		if changed and not silent and opts.Callback then
+			task.spawn(opts.Callback, v)
+		end
+		return v
+	end
+
+	function row:GetValue()
+		return row.Value
+	end
+
+	local hit = make("TextButton", {
+		Name = "Hit", Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 3),
+		BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Active = true, ZIndex = 8,
+	}, body)
+	local function fromX(x)
+		local sc = math.clamp((x - track.AbsolutePosition.X) / math.max(1, track.AbsoluteSize.X), 0, 1)
+		row:Set(min + sc * (max - min))
+	end
+	hit.MouseButton1Down:Connect(function()
+		fromX(UserInputService:GetMouseLocation().X)
+		local mc, uc
+		mc = UserInputService.InputChanged:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch then
+				fromX(i.Position.X)
+			end
+		end)
+		uc = UserInputService.InputEnded:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+				mc:Disconnect()
+				uc:Disconnect()
+			end
+		end)
+	end)
+	hit.InputChanged:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseWheel then
+			row:Set(row.Value + i.Position.Z * (step > 0 and step or (max - min) / 50))
+		end
+	end)
+
+	if opts.HoverContent then
+		row:Tip(opts.HoverContent)
+	end
+	sub(function(t)
+		track.BackgroundColor3 = t.Border
+		track.BackgroundTransparency = t.BorderT + 0.02
+		fill.BackgroundColor3 = t.Accent
+		knob.BackgroundColor3 = t.Text
+		read.TextColor3 = t.TextInactive
+		read.Font = t.Font
+		row.Label.Font = t.Font
+	end)
+	return finishElement(s, row, "slider", opts, row.Value)
+end
+
+local function buildDropdown(s, text, opts, multi)
+	opts = opts or {}
+	local w = s.Window
+	local theme = PegasusUI.Theme
+	local row = s:Row(text, { Name = multi and "Multiselect" or "Dropdown", Indent = opts.Indent, Inactive = opts.Inactive })
+	row.Options = opts.Options or {}
+	row.Value = opts.Default
+	row.Values = {}
+
+	if opts.Swatch then
+		row.Dot = row:Swatch(opts.SwatchColor or theme.Risky)
+	end
+	row:Field(tostring(row.Value or (multi and "None" or "")), { Indicator = opts.Swatch })
+
+	local open = false
+	local function close()
+		if open then
+			closeMenu()
+			open = false
+			row:SetColor(theme.Text, theme.TextT)
+		end
+	end
+	local function label(txt)
+		if multi then
+			local parts = {}
+			for k, v in row.Values do
+				if v then
+					parts[#parts + 1] = tostring(k)
+				end
+			end
+			table.sort(parts)
+			return #parts > 0 and table.concat(parts, ", ") or "None"
+		end
+		return tostring(txt or "None")
+	end
+
+	local function refresh()
+		row:SetText(label(row.Value))
+		if row.Dot then
+			tween(row.Dot, 0.1, { BackgroundTransparency = (multi and next(row.Values)) or (not multi and row.Value ~= "None") and 0 or 1 })
+		end
+	end
+
+	local function openMenu()
+		if open then
+			close()
+			return
+		end
+		closeMenu()
+		open = true
+		local f = row.FieldFrame
+		local h = math.min(#row.Options * 20 + 6, 240)
+		local box = menuBox(math.max(140, f.AbsoluteSize.X + 44), h,
+			Vector2.new(f.AbsolutePosition.X - 10, f.AbsolutePosition.Y + 20),
+			f.AbsolutePosition.Y + h + 30 > vp().Y)
+		MENUS.cur = box
+		row.Box = box
+		for i, opt in row.Options do
+			local isSel = multi and row.Values[opt] or (tostring(row.Value) == tostring(opt))
+			local item = menuItem(box, tostring(opt), i, { Selected = isSel and true or false })
+			item.MouseButton1Click:Connect(function()
+				if multi then
+					row.Values[opt] = not row.Values[opt]
+					item.TextColor3 = row.Values[opt] and theme.Accent or theme.Text
+					item.TextTransparency = row.Values[opt] and 0 or 0.5
+					refresh()
+					w._flags[row.Flag] = row.Values
+				else
+					row.Value = opt
+					refresh()
+					close()
+					w._flags[row.Flag] = opt
+				end
+				if opts.Callback then
+					task.spawn(opts.Callback, multi and row.Values or opt)
+				end
+			end)
+		end
+		local conn
+		conn = UserInputService.InputBegan:Connect(function(input, gp)
+			if not open or not box.Parent then
+				if conn.Parent ~= nil or true then
+					pcall(function()
+						conn:Disconnect()
+					end)
+				end
+				return
+			end
+			local p = Vector2.new(input.Position.X, input.Position.Y)
+			local inside = function(fr)
+				return fr.AbsolutePosition.X <= p.X and p.X <= fr.AbsolutePosition.X + fr.AbsoluteSize.X
+					and fr.AbsolutePosition.Y <= p.Y and p.Y <= fr.AbsolutePosition.Y + fr.AbsoluteSize.Y
+			end
+			if not inside(box) and not inside(row.Container) and input.UserInputType ~= Enum.UserInputType.MouseWheel then
+				conn:Disconnect()
+				close()
+			end
+		end)
+		table.insert(w._conns, conn)
+		row:SetColor(theme.Accent, 0)
+	end
+
+	row.Container.MouseButton1Click:Connect(openMenu)
+
+	function row:Set(v, silent)
+		if multi then
+			row.Values[v] = true
+			refresh()
+		else
+			row.Value = v
+			refresh()
+		end
+		w._flags[row.Flag] = multi and row.Values or v
+		if not silent and opts.Callback then
+			task.spawn(opts.Callback, multi and row.Values or v)
+		end
+	end
+
+	function row:Remove(v)
+		if multi then
+			row.Values[v] = nil
+			refresh()
+		end
+	end
+
+	function row:GetValue()
+		return multi and row.Values or row.Value
+	end
+
+	if opts.HoverContent then
+		row:Tip(opts.HoverContent)
+	end
+	sub(function(t)
+		row.Label.Font = t.Font
+	end)
+	return finishElement(s, row, multi and "multidropdown" or "dropdown", opts, multi and row.Values or row.Value)
+end
+
+local function addKeyPicker(s, text, opts)
+	opts = opts or {}
+	local w = s.Window
+	local theme = PegasusUI.Theme
+	local row = s:Row(text, { Name = "KeyPicker", Indent = opts.Inactive and 0 or 0, Inactive = opts.Inactive })
+	row.Mode = opts.Mode or "Toggle"
+	row.Value = nil
+	row:SetText("None")
+	row:SetColor(theme.TextInactive, theme.TextInactiveT)
+
+	local function name()
+		if row.Value then
+			return row.Value
+		end
+		return "None"
+	end
+
+	function row:SetTextMode()
+		row:SetText(name())
+		w:_refreshBinds()
+	end
+
+	function row:SetKey(v, silent)
+		row.Value = v
+		PegasusUI.SetKey(row, v, row.Mode)
+		if not silent and opts.Callback then
+			task.spawn(opts.Callback, v, row.Mode)
+		end
+		row:SetTextMode()
+	end
+
+	function row:GetValue()
+		return row.Value, row.Mode
+	end
+
+	function row:SetMode(m)
+		row.Mode = m
+		bindRegistry[row] = row.Value and true or nil
+		w:_refreshBinds()
+		if not row.Value then
+			return
+		end
+		PegasusUI.SetKey(row, row.Value, m)
+	end
+
+	local capturing
+	row.Container.MouseButton1Click:Connect(function()
+		if capturing then
+			return
+		end
+		closeMenu()
+		capturing = true
+		row:SetText("...")
+		row:SetColor(theme.Accent, 0)
+		local conn
+		conn = UserInputService.InputBegan:Connect(function(input, gp)
+			local k = input.UserInputType
+			local isKey = k == Enum.UserInputType.Keyboard
+			local isMouse = k == Enum.UserInputType.MouseButton1 or k == Enum.UserInputType.MouseButton2
+			if not (isKey or isMouse) then
+				return
+			end
+			capturing = false
+			conn:Disconnect()
+			local code = isKey and input.KeyCode or k
+			if isKey and code == Enum.KeyCode.Backspace then
+				row.Value = nil
+				PegasusUI.ClearKey(row)
+			else
+				row.Value = code
+				PegasusUI.SetKey(row, code, row.Mode)
+			end
+			row:SetTextMode()
+			row:SetColor(theme.Text, theme.TextT)
+			if opts.Callback then
+				task.spawn(opts.Callback, row.Value, row.Mode)
+			end
+		end)
+		table.insert(w._conns, conn)
+	end)
+	row.Container.MouseButton2Click:Connect(function()
+		local modes = { "Toggle", "Hold", "Always", "None" }
+		local i = table.find(modes, row.Mode) or 1
+		row:SetMode(modes[i % #modes + 1])
+		row:Tip("Mode: " .. row.Mode)
+	end)
+
+	sub(function(t)
+		row.Label.Font = t.Font
+	end)
+	return finishElement(s, row, "keypicker", opts, nil)
+end
+
+local PALETTE = {
+	Color3.fromRGB(255, 255, 255), Color3.fromRGB(0, 0, 0), Color3.fromRGB(255, 77, 79),
+	Color3.fromRGB(255, 128, 0), Color3.fromRGB(255, 224, 88), Color3.fromRGB(119, 221, 119),
+	Color3.fromRGB(126, 196, 238), Color3.fromRGB(88, 110, 224), Color3.fromRGB(178, 122, 222),
+	Color3.fromRGB(240, 160, 190), Color3.fromRGB(169, 169, 169), Color3.fromRGB(60, 60, 68),
+}
+
+local function addColorpicker(s, text, opts)
+	opts = opts or {}
+	local w = s.Window
+	local theme = PegasusUI.Theme
+	local row = s:Row(text, { Name = "ColorPicker", Indent = opts.Inactive and 0 or 0, Inactive = opts.Inactive })
+	row.Value = opts.Default or Color3.new(1, 1, 1)
+	local sw = make("Frame", {
+		Name = "Swatch", AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(26, 12),
+		BackgroundColor3 = row.Value, BorderSizePixel = 0, Corner = UDim.new(0, 2), ZIndex = 6,
+		Stroke = { Thickness = 1, Color = Color3.new(), Transparency = 0.55 },
+	}, row.Container)
+	row.Swatch = sw
+
+	function row:Set(c3, silent)
+		row.Value = c3
+		tween(sw, 0.12, { BackgroundColor3 = c3 })
+		w._flags[row.Flag] = { c3.R, c3.G, c3.B }
+		if not silent and opts.Callback then
+			task.spawn(opts.Callback, c3)
+		end
+	end
+
+	function row:GetValue()
+		return row.Value
+	end
+
+	function row:SetTransparency(v, silent)
+		row.Transparency = math.clamp(v or 0, 0, 1)
+		sw.BackgroundTransparency = row.Transparency
+		if not silent and opts.TransCallback then
+			task.spawn(opts.TransCallback, row.Transparency)
+		end
+	end
+
+	function row:SetVisible(v)
+		sw.Visible = v and true or false
+	end
+
+	local MODES = { "Colour", "Transparency", "Both" }
+	row.Container.MouseButton1Click:Connect(function()
+		closeMenu()
+		local box = menuBox(162, 150, Vector2.new(sw.AbsolutePosition.X - 120, sw.AbsolutePosition.Y + 18),
+			sw.AbsolutePosition.Y + 150 + 30 > vp().Y)
+		MENUS.cur = box
+		local hex = make("TextBox", {
+			Name = "Hex", LayoutOrder = 1, Size = UDim2.new(1, -10, 0, 20), Position = UDim2.fromOffset(5, 3),
+			BackgroundColor3 = theme.Inline, BackgroundTransparency = 0.2, BorderSizePixel = 0, Corner = UDim.new(0, 3),
+			Font = theme.Font, TextSize = 13, Text = "#" .. row.Value:ToHex(), TextXAlignment = Enum.TextXAlignment.Left,
+			PlaceholderText = "#ffffff", PlaceholderColor3 = Color3.fromRGB(107, 107, 112), TextColor3 = theme.Text,
+			ClearTextOnFocus = false, ZIndex = GUIDE_Z + 21,
+		}, box)
+		make("UIPadding", { PaddingLeft = UDim.new(0, 6), Parent = hex })
+		hex.FocusLost:Connect(function()
+			local h = hex.Text:gsub("#", "")
+			if #h == 6 then
+				row:Set(Color3.fromHex(h))
+			end
+		end)
+		local grid = make("Frame", {
+			Name = "Grid", LayoutOrder = 2, Size = UDim2.new(1, -12, 0, 74), Position = UDim2.fromOffset(6, 28),
+			BackgroundTransparency = 1, ZIndex = GUIDE_Z + 21,
+		}, box)
+		make("UIGridLayout", { CellSize = UDim2.fromOffset(13, 13), CellPadding = UDim2.fromOffset(4, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = grid })
+		for i, pal in PALETTE do
+			local b = make("TextButton", {
+				Text = "", LayoutOrder = i, BackgroundColor3 = pal, BorderSizePixel = 0, Corner = UDim.new(0, 2),
+				AutoButtonColor = false, ZIndex = GUIDE_Z + 21,
+			}, grid)
+			b.MouseButton1Click:Connect(function()
+				row:Set(pal)
+			end)
+		end
+		local modes = make("TextButton", {
+			Name = "Mode", LayoutOrder = 3, Size = UDim2.new(1, -10, 0, 19), Position = UDim2.fromOffset(5, 106),
+			BackgroundColor3 = theme.Inline, BackgroundTransparency = 0.25, BorderSizePixel = 0, Corner = UDim.new(0, 3),
+			AutoButtonColor = false, Font = theme.Font, TextSize = 12, RichText = true, Text = "Mode: " .. (row.Mode or "Colour"),
+			TextColor3 = theme.Text, TextTransparency = 0.1, ZIndex = GUIDE_Z + 21,
+		}, box)
+		modes.MouseButton1Click:Connect(function()
+			local i = table.find(MODES, row.Mode or "Colour") or 1
+			row.Mode = MODES[i % #MODES + 1]
+			modes.Text = "Mode: " .. row.Mode
+		end)
+		local reset = make("TextButton", {
+			Name = "Reset", LayoutOrder = 4, Size = UDim2.new(1, -10, 0, 19), Position = UDim2.fromOffset(5, 127),
+			BackgroundColor3 = theme.Inline, BackgroundTransparency = 0.25, BorderSizePixel = 0, Corner = UDim.new(0, 3),
+			AutoButtonColor = false, Font = theme.Font, TextSize = 12, RichText = true, Text = "Reset",
+			TextColor3 = theme.Text, TextTransparency = 0.1, ZIndex = GUIDE_Z + 21,
+		}, box)
+		reset.MouseButton1Click:Connect(function()
+			row:Set(opts.Default or Color3.new(1, 1, 1))
+			closeMenu()
+		end)
+	end)
+	if opts.HoverContent then
+		row:Tip(opts.HoverContent)
+	end
+	return finishElement(s, row, "colorpicker", opts, { row.Value.R, row.Value.G, row.Value.B })
+end
+
+local function addButton(s, text, opts)
+	opts = opts or {}
+	local w = s.Window
+	local theme = PegasusUI.Theme
+	local wide = opts.FullWidth or opts.Full
+	local row = s:Row(text, { Name = "Button", Indent = 0, hasValue = not wide, Height = wide and 22 or 21 })
+	if opts.Value and not wide then
+		row:Field(opts.Value, { Transparency = 0.1 })
+	end
+	if wide then
+		make("Frame", {
+			Name = "Box", Size = UDim2.new(1, -14, 1, -3), Position = UDim2.fromOffset(7, 1),
+			BackgroundColor3 = theme.Inline, BackgroundTransparency = 0.35, BorderSizePixel = 0, Corner = UDim.new(0, 3),
+			ZIndex = 5, Stroke = { Thickness = 1, Color = theme.Border, Transparency = theme.BorderT },
+		}, row.Container)
+		row.Label.Size = UDim2.fromScale(1, 1)
+		row.Label.Position = UDim2.new()
+		row.Label.TextXAlignment = Enum.TextXAlignment.Center
+	end
+
+	function row:Click()
+		tween(row:FindFirstChild("Box") or row.Container, 0.07, { BackgroundTransparency = theme.HoveredElementT })
+		task.delay(0.07, function()
+			if not row.Hovered then
+				tween(row.Container, 0.13, { BackgroundTransparency = 1 })
+			end
+		end)
+		if opts.Callback then
+			task.spawn(opts.Callback)
+		end
+	end
+
+	function row:GetValue()
+		return nil
+	end
+
+	function row:Set(v)
+		if row.FieldFrame then
+			row:SetText(v)
+		end
+	end
+
+	function row:SetTitle(t)
+		row.Label.Text = esc(t)
+	end
+
+	row.Container.MouseButton1Click:Connect(row.Click)
+	sub(function(t)
+		row.Label.Font = t.Font
+	end)
+	return finishElement(s, row, "button", opts, nil)
+end
+
+local function addTextbox(s, text, opts)
+	opts = opts or {}
+	local w = s.Window
+	local theme = PegasusUI.Theme
+	local row = s:Row(text, { Name = "TextBox", hasValue = false, twoLine = true, Height = 42 })
+	row.Value = opts.Default or opts.Text or ""
+	local box = make("TextBox", {
+		Name = "Input", Position = UDim2.fromOffset(8, 19), Size = UDim2.new(1, -16, 0, 20),
+		BackgroundColor3 = theme.Inline, BackgroundTransparency = 0.45, BorderSizePixel = 0, Corner = UDim.new(0, 3),
+		Font = theme.Font, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
+		MultiLine = opts.Multiline or false, PlaceholderText = opts.Placeholder or "", PlaceholderColor3 = Color3.fromRGB(107, 107, 112),
+		TextColor3 = theme.Text, Text = row.Value, ClearTextOnFocus = false, ZIndex = 6,
+	}, row.Container)
+	make("UIStroke", { Thickness = 1, Color = theme.Border, Transparency = theme.BorderT, Parent = box })
+	make("UIPadding", { PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6), Parent = box })
+	box.Focused:Connect(function()
+		tween(box, 0.1, { BackgroundTransparency = 0.2 })
+		if opts.Focus then
+			task.spawn(opts.Focus)
+		end
+	end)
+	box.FocusLost:Connect(function(enter)
+		tween(box, 0.12, { BackgroundTransparency = 0.45 })
+		row.Value = box.Text
+		w._flags[row.Flag] = box.Text
+		if opts.Callback then
+			task.spawn(opts.Callback, box.Text, enter)
+		end
+	end)
+
+	function row:Set(v, silent)
+		row.Value = tostring(v)
+		box.Text = row.Value
+		w._flags[row.Flag] = row.Value
+		if not silent and opts.Callback then
+			task.spawn(opts.Callback, row.Value, false)
+		end
+	end
+
+	function row:GetValue()
+		return row.Value
+	end
+	return finishElement(s, row, "textbox", opts, row.Value)
+end
+
+local function addLabel(s, text, opts)
+	opts = opts or {}
+	local row = s:Row(opts.Text or text, { Name = "Label", hasValue = false, Inactive = opts.Inactive ~= false, Height = 18 })
+	function row:Set(v)
+		row.Label.Text = esc(tostring(v))
+	end
+	return finishElement(s, row, "label", opts, nil)
+end
+
+local function addParagraph(s, text, opts)
+	opts = opts or {}
+	local row = s:Row(opts.Text or text, { Name = "Paragraph", hasValue = false, Height = 54 })
+	row.Label.TextWrapped = true
+	row.Label.TextSize = 12
+	row.Label.Size = UDim2.new(1, -16, 1, -4)
+	row.Label.Position = UDim2.fromOffset(8, 2)
+	row.Label.TextYAlignment = Enum.TextYAlignment.Top
+	function row:Set(v)
+		row.Label.Text = esc(tostring(v))
+	end
+	return finishElement(s, row, "paragraph", opts, nil)
+end
+
+local function addDivider(s)
+	make("Frame", {
+		Name = "Divider", LayoutOrder = s._n + 1, Size = UDim2.new(1, -16, 0, 1), Position = UDim2.fromOffset(8, 6),
+		BackgroundColor3 = PegasusUI.Theme.Border, BackgroundTransparency = PegasusUI.Theme.BorderT,
+		BorderSizePixel = 0, ZIndex = 5,
+	}, s.Rows)
+	s._n += 1
+end
+
+-- keybinds overlay (bottom-left list from the reference)
+local function buildBinds(w)
+	local theme = PegasusUI.Theme
+	local panel = make("Frame", {
+		Name = "Keybinds", AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 26, 1, -120),
+		Size = UDim2.fromOffset(260, 64), BackgroundColor3 = theme.Background,
+		BackgroundTransparency = theme.BackgroundT + 0.03, BorderSizePixel = 0, Corner = UDim.new(0, 4),
+		Stroke = { Thickness = 1, Color = theme.Border, Transparency = theme.BorderT }, Visible = false, ZIndex = GUIDE_Z + 4,
+	}, gui())
+	make("TextLabel", {
+		Name = "Header", Size = UDim2.new(1, -24, 0, 16), Position = UDim2.fromOffset(12, 7), BackgroundTransparency = 1,
+		Font = theme.Font, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left, Text = "Keybinds",
+		TextColor3 = theme.Text, TextTransparency = theme.TextInactiveT, ZIndex = GUIDE_Z + 5,
+	}, panel)
+	make("Frame", {
+		Name = "Rule", Size = UDim2.new(1, -24, 0, 1), Position = UDim2.fromOffset(12, 26), BackgroundColor3 = theme.Border,
+		BackgroundTransparency = theme.BorderT, BorderSizePixel = 0, ZIndex = GUIDE_Z + 5,
+	}, panel)
+	make("Frame", {
+		Name = "Accent", Size = UDim2.new(0, 2, 1, -40), Position = UDim2.fromOffset(7, 32), BackgroundColor3 = theme.Accent,
+		BorderSizePixel = 0, Corner = UDim.new(1, 0), ZIndex = GUIDE_Z + 5,
+	}, panel)
+	local rows = make("Frame", {
+		Name = "Rows", Size = UDim2.new(1, -26, 1, -40), Position = UDim2.fromOffset(17, 32), BackgroundTransparency = 1,
+		ZIndex = GUIDE_Z + 5,
+	}, panel)
+	make("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder, Parent = rows })
+
+	local api = { Panel = panel, shown = true, _count = 0 }
+
+	function api:Refresh()
+		for _, c in rows:GetChildren() do
+			if c:IsA("TextLabel") then
+				c:Destroy()
+			end
+		end
+		local n = 0
+		for _, row in w._rows do
+			local isBind = row.Kind == "keypicker"
+			local key = row.KeyCode or (isBind and row.Value)
+			if key then
+				n += 1
+				local label = row.Text
+				local mode = row.Mode or "Toggle"
+				local name = (typeof(key) == "EnumItem" and key.Name) or tostring(key)
+				make("TextLabel", {
+					Name = "K" .. n, LayoutOrder = n, Size = UDim2.new(1, 0, 0, 17), BackgroundTransparency = 1,
+					Font = theme.Font, TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left, RichText = true,
+					Text = "<font color=\"#" .. theme.Accent:ToHex() .. "\">" .. esc(name) .. "</font> - " .. esc(label) .. " - " .. esc(mode),
+					TextColor3 = Color3.new(1, 1, 1), TextTransparency = 0, TextStrokeColor3 = theme.TextStroke,
+					TextStrokeTransparency = 0, ZIndex = GUIDE_Z + 5,
+				}, rows)
+			end
+		end
+		api._count = n
+		panel.Size = UDim2.fromOffset(260, math.max(48, 40 + n * 19))
+		api:_show(n > 0 and api.shown and not w:IsOpen())
+	end
+
+	function api:_show(on)
+		if panel.Visible == on then
+			return
+		end
+		panel.Visible = on
+		if on then
+			panel.BackgroundTransparency = 1
+			tween(panel, 0.18, { BackgroundTransparency = theme.BackgroundT + 0.03 })
+		end
+	end
+
+	function api:SetVisible(on)
+		api.shown = on and true or false
+		api:_show(api.shown and api._count > 0 and not w:IsOpen())
+	end
+
+	sub(function(t)
+		panel.BackgroundColor3 = t.Background
+		local panelStroke = panel:FindFirstChildOfClass("UIStroke")
+		if panelStroke then
+			panelStroke.Color = t.Border
+		end
+		panel.Header.TextColor3 = t.Text
+		panel.Accent.BackgroundColor3 = t.Accent
+		panel.Rule.BackgroundColor3 = t.Border
+		panel.Rule.BackgroundTransparency = t.BorderT
+	end)
+
+	return api
+end
+
+-- notify queue
+local function buildNotifier(w)
+	local theme = PegasusUI.Theme
+	local holder = make("Frame", {
+		Name = "Notifies", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -16, 0, 16),
+		Size = UDim2.fromOffset(280, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1,
+		ZIndex = GUIDE_Z + 8,
+	}, gui())
+	make("UIListLayout", { Padding = UDim.new(0, 6), HorizontalAlignment = Enum.HorizontalAlignment.Right, SortOrder = Enum.SortOrder.LayoutOrder, Parent = holder })
+	local order, n = {}, 0
+
+	local function layout()
+		local shown = 0
+		for _, toast in order do
+			if toast.Parent then
+				shown += 1
+				toast.LayoutOrder = shown
+			end
+		end
+	end
+
+	local api = {}
+	function api:Push(info)
+		n += 1
+		local duration = info.Duration or 2.6
+		local toast = make("Frame", {
+			Name = "N" .. n, LayoutOrder = 9e9, Size = UDim2.fromOffset(270, 44 + (info.Content and 16 or 0)),
+			BackgroundColor3 = theme.Background, BackgroundTransparency = theme.BackgroundT, BorderSizePixel = 0,
+			Corner = UDim.new(0, 4), AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 30, 0, 0),
+			Stroke = { Thickness = 1, Color = theme.Border, Transparency = theme.BorderT }, ZIndex = GUIDE_Z + 8,
+		}, holder)
+		make("Frame", {
+			Size = UDim2.new(0, 2, 1, -10), Position = UDim2.fromOffset(0, 5),
+			BackgroundColor3 = info.Risky and theme.Risky or theme.Accent, BorderSizePixel = 0,
+			Corner = UDim.new(1, 0), ZIndex = GUIDE_Z + 9,
+		}, toast)
+		make("TextLabel", {
+			Name = "Title", Size = UDim2.new(1, -20, 0, 15), Position = UDim2.fromOffset(12, 6), BackgroundTransparency = 1,
+			Font = theme.Font, TextSize = 14, RichText = true, TextXAlignment = Enum.TextXAlignment.Left,
+			Text = esc(info.Title or ""), TextColor3 = theme.Accent, TextTransparency = 0.15, ZIndex = GUIDE_Z + 9,
+		}, toast)
+		make("TextLabel", {
+			Name = "Text", Size = UDim2.new(1, -20, 0, info.Content and 14 or 30),
+			Position = UDim2.fromOffset(12, info.Content and 21 or 7), BackgroundTransparency = 1, Font = theme.Font,
+			TextSize = 13, RichText = true, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top, Text = esc(info.Text), TextColor3 = theme.Text,
+			TextTransparency = theme.TextT, ZIndex = GUIDE_Z + 9,
+		}, toast)
+		if info.Counter then
+			local lbl = make("TextLabel", {
+				Name = "Counter", Size = UDim2.fromOffset(40, 12), AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, -10, 0, 6), BackgroundTransparency = 1, Font = theme.Font, TextSize = 11,
+				Text = counter, TextXAlignment = Enum.TextXAlignment.Right, TextColor3 = theme.TextInactive,
+				TextTransparency = theme.TextInactiveT, ZIndex = GUIDE_Z + 9,
+			}, toast)
+		end
+		table.insert(order, toast)
+		layout()
+		tween(toast, 0.2, { Position = UDim2.new(1, 0, 0, 0) })
+		task.delay(duration, function()
+			local i = table.find(order, toast)
+			if i then
+				table.remove(order, i)
+			end
+			tween(toast, 0.25, { Position = UDim2.new(1, 30, 0, 0), BackgroundTransparency = 1 })
+			task.delay(0.26, function()
+				toast:Destroy()
+				layout()
+			end)
+		end)
+		return toast
+	end
+	return api
+end
+
+-- config system
+local function configPath(name)
+	return "pegasus-ui/configs/" .. tostring(name) .. ".json"
+end
+
+local function encodeFlags(flags)
+	local parts = {}
+	for key, value in flags do
+		local t = typeof(value)
+		if t == "boolean" then
+			parts[#parts + 1] = string.format("%q:%s", key, tostring(value))
+		elseif t == "number" then
+			parts[#parts + 1] = string.format("%q:%s", key, tostring(value))
+		elseif t == "string" then
+			parts[#parts + 1] = string.format("%q:%q", key, value)
+		elseif t == "Vector3" then
+			parts[#parts + 1] = string.format("%q:[%s,%s,%s]", key, tostring(value.X), tostring(value.Y), tostring(value.Z))
+		elseif t == "table" then
+			local flat = {}
+			for _, v in value do
+				flat[#flat + 1] = tostring(v)
+			end
+			if value[1] ~= nil then
+				parts[#parts + 1] = string.format("%q:[%s]", key, table.concat(flat, ","))
+			end
+		end
+	end
+	return "{" .. table.concat(parts, ",") .. "}"
+end
+
+local function decodeFlags(str)
+	local out = {}
+	if type(str) ~= "string" then
+		return out
+	end
+	for key, rest in str:gsub("[{}]", ""):gmatch('"([^"]+)":') do
+		local after = str:match('"' .. key .. '":(.-)[,}]')
+		if after == "true" then
+			out[key] = true
+		elseif after == "false" then
+			out[key] = false
+		elseif after:match("^%-?%d+%.?%d*$") then
+			out[key] = tonumber(after)
+		elseif after:match('^"') then
+			out[key] = after:gsub('"', "")
+		elseif after:match("^%[") then
+			local nums = {}
+			for n in after:gmatch("%-?%d+%.?%d*") do
+				nums[#nums + 1] = tonumber(n)
+			end
+			out[key] = nums
+		end
+	end
+	return out
+end
+
+local function writeFile(path, data)
+	local ok = false
+	pcall(function()
+		if isfolder and not isfolder("pegasus-ui") then
+			makefolder("pegasus-ui")
+		end
+		if isfolder and not isfolder("pegasus-ui/configs") then
+			makefolder("pegasus-ui/configs")
+		end
+		writefile(path, data)
+		ok = true
+	end)
+	if not ok then
+		pcall(function()
+			local st = settings()
+			st.PegasusConfigs = st.PegasusConfigs or {}
+			st.PegasusConfigs[path] = data
+			ok = true
+		end)
+	end
+	return ok
+end
+
+local function readFile(path)
+	local data
+	pcall(function()
+		if isfile and isfile(path) then
+			data = readfile(path)
+		end
+	end)
+	if not data then
+		pcall(function()
+			local st = settings()
+			if st.PegasusConfigs then
+				data = st.PegasusConfigs[path]
+			end
+		end)
+	end
+	return data
+end
+
+local function applyConfig(w, data)
+	for flag, value in data do
+		local row = w._elements[flag]
+		if row then
+			if row.Kind == "toggle" then
+				row:Set(value, true)
+			elseif row.Kind == "slider" then
+				row:Set(tonumber(value), true)
+			elseif row.Kind == "dropdown" then
+				row:Set(value, true)
+			elseif row.Kind == "multidropdown" then
+				row.Values = {}
+				for _, v in (value or {}) do
+					for _, opt in row.Options do
+						if tostring(opt) == tostring(v) then
+							row.Values[opt] = true
+						end
+					end
+				end
+				if row.Dot then
+					row.Dot.BackgroundTransparency = next(row.Values) and 0 or 1
+				end
+				row:SetText((function()
+					local p = {}
+					for k in row.Values do
+						p[#p + 1] = tostring(k)
+					end
+					return #p > 0 and table.concat(p, ", ") or "None"
+				end)())
+			elseif row.Kind == "colorpicker" and type(value) == "table" then
+				row:Set(Color3.fromRGB(math.floor((value[1] or 1) * 255), math.floor((value[2] or 1) * 255), math.floor((value[3] or 1) * 255)), true)
+			elseif row.Kind == "textbox" then
+				row:Set(value, true)
+			end
+		end
+	end
+end
+
+---------------------------------------------------------------------
+PegasusUI.Window = function(opts)
+	local w = buildWindow(opts)
+	local theme = PegasusUI.Theme
+
+	w.TabBar = w.Outer.Inner:FindFirstChild("Tabs")
+	w._binds = buildBinds(w)
+	w._notifier = buildNotifier(w)
+
+	function w:AddTab(name, tabOpts)
+		local tab = buildTab(w, name, tabOpts or {})
+		table.insert(w.Tabs, tab)
+		for i, t in w.Tabs do
+			t.Button.Size = UDim2.new(1 / #w.Tabs, 0, 1, 0)
+			t.Button.LayoutOrder = i
+		end
+		if #w.Tabs == 1 then
+			task.defer(function()
+				tab:Activate(true)
+			end)
+		end
+		w._hl.Size = UDim2.new(1 / math.max(1, #w.Tabs), 0, 0, 2)
+
+		tab.AddLeftGroupbox = function(self, title, gbOpts)
+			return buildSection(self, title, 1, gbOpts)
+		end
+		tab.AddRightGroupbox = function(self, title, gbOpts)
+			return buildSection(self, title, 2, gbOpts)
+		end
+		tab.AddGroupbox = function(self, title, side, gbOpts)
+			return buildSection(self, title, side or 1, gbOpts)
+		end
+		return tab
+	end
+
+	function w:_refreshBinds()
+		w._binds:Refresh()
+	end
+
+	function w:GetElement(name)
+		for _, row in w._rows do
+			if row.Text == name or row.Flag == name then
+				return row
+			end
+		end
+	end
+
+	function w:ShowKeybinds(on)
+		w:SetKeybindsVisible(on ~= false)
+	end
+
+	function w:Notify(text, duration, title, counter)
+		w._notifier:Push({ Text = text, Duration = duration, Title = title, Counter = counter })
+	end
+
+	function w:SetKeybindsVisible(on)
+		w._binds:SetVisible(on)
+	end
+
+	function w:SaveConfig(name)
+		writeFile(configPath(name), encodeFlags(w._flags))
+		w:Notify("Saved config: " .. tostring(name), 2.4, "pegasus.tech")
+	end
+
+	function w:LoadConfig(name)
+		local data = readFile(configPath(name))
+		if data then
+			applyConfig(w, decodeFlags(data))
+			w:Notify("Loaded config: " .. tostring(name), 2.4, "pegasus.tech")
+		else
+			w:Notify("Config not found: " .. tostring(name), 2.4, "pegasus.tech", nil)
+		end
+	end
+
+	function w:ListConfigs()
+		local out = {}
+		pcall(function()
+			if listfiles then
+				for _, e in listfiles("pegasus-ui/configs/*") do
+					local n = e.Name:match("([^/\\]+)%.json$")
+					if n then
+						table.insert(out, n)
+					end
+				end
+			end
+		end)
+		pcall(function()
+			local st = settings()
+			if st.PegasusConfigs then
+				for path in st.PegasusConfigs do
+					local n = path:match("([^/\\]+)%.json$")
+					if n and not table.find(out, n) then
+						table.insert(out, n)
+					end
+				end
+			end
+		end)
+		table.sort(out)
+		return out
+	end
+
+	function w:DeleteConfig(name)
+		pcall(function()
+			if isfile and isfile(configPath(name)) then
+				delfile(configPath(name))
+			end
+			local st = settings()
+			if st.PegasusConfigs then
+				st.PegasusConfigs[configPath(name)] = nil
+			end
+		end)
+		w:Notify("Deleted config: " .. tostring(name), 2.4, "pegasus.tech")
+	end
+
+	sub(function(t)
+		if w._mobileBtn then
+			w._mobileBtn.BackgroundColor3 = t.Background
+			w._mobileBtn.TextColor3 = t.Text
+		end
+	end)
+
+	table.insert(WINDOWS, w)
+	return w
+end
+
+function PegasusUI.Notify(text, duration, title, counter)
+	local w = WINDOWS[#WINDOWS]
+	if w then
+		w:Notify(text, duration, title, counter)
+	end
+end
+
+function PegasusUI.SetKeybindsVisible(on)
+	for _, w in WINDOWS do
+		w:SetKeybindsVisible(on)
+	end
+end-- element adders on groupboxes
+local gb = {}
+gb.AddToggle = function(gb, text, opts)
+	return addToggle(gb, text, opts)
+end
+gb.AddSlider = function(gb, text, opts)
+	return addSlider(gb, text, opts)
+end
+gb.AddDropdown = function(gb, text, opts)
+	return buildDropdown(gb, text, opts, false)
+end
+gb.AddMultiDropdown = function(gb, text, opts)
+	return buildDropdown(gb, text, opts, true)
+end
+gb.AddKeyPicker = function(gb, text, opts)
+	return addKeyPicker(gb, text, opts)
+end
+gb.AddColorpicker = function(gb, text, opts)
+	return addColorpicker(gb, text, opts)
+end
+gb.AddButton = function(gb, text, opts)
+	return addButton(gb, text, opts)
+end
+gb.AddTextbox = function(gb, text, opts)
+	return addTextbox(gb, text, opts)
+end
+gb.AddLabel = function(gb, text, opts)
+	return addLabel(gb, text, opts)
+end
+gb.AddParagraph = function(gb, text, opts)
+	return addParagraph(gb, text, opts)
+end
+gb.AddDivider = function(gb)
+	addDivider(gb)
+end
+PegasusUI._gb = gb
+
+-- composite groupboxes: player list, config manager, menu bind
+local TAGS = { "Neutral", "Friendly", "Enemy" }
+
+local function addPlayerList(gbx, opts)
+	opts = opts or {}
+	local w = gbx.Window
+	local theme = PegasusUI.Theme
+	local rows = {}
+	local container = make("ScrollingFrame", {
+		Name = "Players", LayoutOrder = gbx._n + 1, Size = UDim2.new(1, -6, 1, -46), Position = UDim2.fromOffset(3, 3),
+		BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 2,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
+		CanvasSize = UDim2.new(0, 0, 0, 0), ZIndex = 5,
+	}, gbx.Rows)
+	make("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = container })
+	local filter = ""
+
+	local function tagColor(tag)
+		if tag == "Friendly" then
+			return Color3.fromRGB(126, 201, 143)
+		elseif tag == "Enemy" then
+			return theme.Risky
+		end
+		return theme.Text
+	end
+
+	local function build()
+		for _, r in rows do
+			if r.Button and r.Button.Parent then
+				r.Button:Destroy()
+			end
+		end
+		table.clear(rows)
+		local list = opts.Entries
+		if not list then
+			list = {}
+			for _, plr in Players:GetPlayers() do
+				list[#list + 1] = { Name = plr.Name, Handle = plr.Name, UserId = plr.UserId, Tag = "Neutral", Plr = plr }
+			end
+		end
+		table.sort(list, function(a, b)
+			return tostring(a.Name) < tostring(b.Name)
+		end)
+		local order = 0
+		for _, info in list do
+			local shown = tostring(info.Name) .. (info.Handle and (" (@" .. tostring(info.Handle):gsub("@", "") .. ")") or "")
+			if #filter == 0 or shown:lower():find(filter:lower(), 1, true) then
+				order += 1
+				local btn = make("TextButton", {
+					Name = "P" .. order, LayoutOrder = order, Size = UDim2.new(1, -4, 0, 23), Position = UDim2.fromOffset(2, 0),
+					BackgroundColor3 = theme.HoveredElement, BackgroundTransparency = 1, BorderSizePixel = 0,
+					Corner = UDim.new(0, 3), AutoButtonColor = false, Text = "", Font = theme.Font, ZIndex = 5,
+				}, container)
+				local ava = make("ImageLabel", {
+					Name = "Avatar", Size = UDim2.fromOffset(15, 15), Position = UDim2.fromOffset(6, 4),
+					BackgroundTransparency = 1, ScaleType = Enum.ScaleType.Crop, Corner = UDim.new(0, 3), ZIndex = 6,
+				}, btn)
+				task.spawn(function()
+					if info.UserId then
+						local ok, url = pcall(function()
+							return Players:GetUserThumbnailAsync(info.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
+						end)
+						if ok then
+							ava.Image = url
+						end
+					end
+				end)
+				make("TextLabel", {
+					Name = "Name", Size = UDim2.new(1, -100, 1, 0), Position = UDim2.fromOffset(26, 0), BackgroundTransparency = 1,
+					Font = theme.Font, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+					RichText = true, Text = esc(shown), TextColor3 = theme.Text, TextTransparency = theme.TextT, ZIndex = 6,
+				}, btn)
+				local tag = make("TextLabel", {
+					Name = "Tag", Size = UDim2.fromOffset(58, 15), AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0),
+					BackgroundTransparency = 1, Font = theme.Font, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Right,
+					RichText = true, Text = esc(info.Tag or "Neutral"), TextColor3 = tagColor(info.Tag or "Neutral"), ZIndex = 6,
+				}, btn)
+				local entry = { Info = info, Button = btn, Tag = tag, Value = info.Tag or "Neutral" }
+				btn.MouseEnter:Connect(function()
+					tween(btn, 0.07, { BackgroundTransparency = theme.HoveredElementT })
+				end)
+				btn.MouseLeave:Connect(function()
+					tween(btn, 0.09, { BackgroundTransparency = 1 })
+				end)
+				btn.MouseButton1Click:Connect(function()
+					closeMenu()
+					local box = menuBox(112, #TAGS * 20 + 6, Vector2.new(tag.AbsolutePosition.X - 56, tag.AbsolutePosition.Y + 18))
+					MENUS.cur = box
+					for i, name in TAGS do
+						menuItem(box, name, i, { Selected = entry.Value == name }).MouseButton1Click:Connect(function()
+							entry.Value = name
+							tag.Text = esc(name)
+							tag.TextColor3 = tagColor(name)
+							closeMenu()
+							if opts.Callback then
+								task.spawn(opts.Callback, entry.Info, name, entry)
+							end
+						end)
+					end
+				end)
+				rows[#rows + 1] = entry
+			end
+		end
+	end
+	build()
+
+	local search = make("TextBox", {
+		Name = "Filter", LayoutOrder = gbx._n + 2, Size = UDim2.new(1, -16, 0, 19), Position = UDim2.fromOffset(8, 3),
+		BackgroundColor3 = theme.Inline, BackgroundTransparency = 0.35, BorderSizePixel = 0, Corner = UDim.new(0, 3),
+		Font = theme.Font, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, Text = "", PlaceholderText = "Search..",
+		PlaceholderColor3 = Color3.fromRGB(107, 107, 112), TextColor3 = theme.Text, ClearTextOnFocus = false, ZIndex = 6,
+	}, gbx.Rows)
+	make("UIPadding", { PaddingLeft = UDim.new(0, 6), Parent = search })
+	search:GetPropertyChangedSignal("Text"):Connect(function()
+		filter = search.Text
+		build()
+	end)
+
+	local api = { Rows = rows, Container = container, Search = search }
+	function api:Refresh()
+		build()
+	end
+	function api:SetEntries(list)
+		opts.Entries = list
+		build()
+	end
+	gbx._n += 2
+	gbx.Refresh = function()
+		build()
+	end
+	sub(function(t)
+		search.TextColor3 = t.Text
+		search.Font = t.Font
+		container.ScrollBarImageColor3 = t.Accent
+	end)
+	return api
+end
+
+local function addConfigList(gbx, opts)
+	opts = opts or {}
+	local w = gbx.Window
+	local theme = PegasusUI.Theme
+	local folder = opts.Folder or "pegasus-ui/configs"
+	local names = {}
+	local selName, filterText = nil, ""
+
+	local list = make("ScrollingFrame", {
+		Name = "ConfigList", LayoutOrder = gbx._n + 1, Size = UDim2.new(1, -16, 0, 148), Position = UDim2.fromOffset(8, 4),
+		BackgroundColor3 = theme.Inline, BackgroundTransparency = 0.55, BorderSizePixel = 0, Corner = UDim.new(0, 3),
+		ScrollBarThickness = 2, AutomaticCanvasSize = Enum.AutomaticSize.Y, ScrollingDirection = Enum.ScrollingDirection.Y,
+		CanvasSize = UDim2.new(0, 0, 0, 0), ZIndex = 5,
+	}, gbx.Rows)
+	make("UIStroke", { Thickness = 1, Color = theme.Border, Transparency = theme.BorderT, Parent = list })
+	make("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = list })
+	make("UIPadding", { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 2), Parent = list })
+	make("UIPadding", { PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 3), Parent = list })
+
+	local search = make("TextBox", {
+		Name = "Search", LayoutOrder = 0, Size = UDim2.new(1, -16, 0, 19), Position = UDim2.fromOffset(8, -24),
+		BackgroundTransparency = 1, BorderSizePixel = 0, Font = theme.Font, TextSize = 13,
+		TextXAlignment = Enum.TextXAlignment.Left, Text = "", PlaceholderText = "Search..",
+		PlaceholderColor3 = Color3.fromRGB(107, 107, 112), TextColor3 = theme.Text, ClearTextOnFocus = false, ZIndex = 6,
+	}, gbx.Rows)
+
+	local nameBox = make("TextBox", {
+		Name = "ConfigName", LayoutOrder = gbx._n + 2, Size = UDim2.new(1, -16, 0, 20), Position = UDim2.fromOffset(8, 158),
+		BackgroundColor3 = theme.Inline, BackgroundTransparency = 0.5, BorderSizePixel = 0, Corner = UDim.new(0, 3),
+		Font = theme.Font, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, Text = opts.DefaultName or "",
+		PlaceholderText = "Config name", PlaceholderColor3 = Color3.fromRGB(107, 107, 112), TextColor3 = theme.Text,
+		ClearTextOnFocus = false, ZIndex = 6,
+	}, gbx.Rows)
+	make("UIStroke", { Thickness = 1, Color = theme.Border, Transparency = theme.BorderT, Parent = nameBox })
+
+	local api = { List = list, Search = search, NameBox = nameBox, Names = names }
+
+	local function path(name)
+		return folder .. "/" .. name .. ".json"
+	end
+
+	local function read(name)
+		local data
+		pcall(function()
+			if isfile and isfile(path(name)) then
+				data = readfile(path(name))
+			end
+		end)
+		if not data then
+			pcall(function()
+				local st = settings()
+				if st.PegasusConfigs then
+					data = st.PegasusConfigs[path(name)]
+				end
+			end)
+		end
+		return data
+	end
+
+	local function refresh()
+		for _, c in list:GetChildren() do
+			if c:IsA("TextButton") then
+				c:Destroy()
+			end
+		end
+		local order = 0
+		for _, name in names do
+			if #filterText == 0 or name:lower():find(filterText:lower(), 1, true) then
+				order += 1
+				local item = make("TextButton", {
+					Name = "C_" .. name, LayoutOrder = order, Size = UDim2.new(1, -6, 0, 20), BackgroundColor3 = theme.HoveredElement,
+					BackgroundTransparency = selName == name and 0.35 or 1, BorderSizePixel = 0, Corner = UDim.new(0, 2),
+					AutoButtonColor = false, Font = theme.Font, TextSize = 13, RichText = true,
+					TextXAlignment = Enum.TextXAlignment.Left, Text = esc(name), TextColor3 = theme.Text,
+					TextTransparency = theme.TextT, ZIndex = 6,
+				}, list)
+				make("UIPadding", { PaddingLeft = UDim.new(0, 6), Parent = item })
+				item.MouseEnter:Connect(function()
+					tween(item, 0.06, { BackgroundTransparency = theme.HoveredElementT })
+				end)
+				item.MouseLeave:Connect(function()
+					tween(item, 0.08, { BackgroundTransparency = selName == name and 0.35 or 1 })
+				end)
+				item.MouseButton1Click:Connect(function()
+					selName = name
+					nameBox.Text = name
+					for _, other in list:GetChildren() do
+						if other:IsA("TextButton") then
+							other.BackgroundTransparency = other == item and 0.35 or 1
+						end
+					end
+				end)
+			end
+		end
+	end
+
+	local function scan()
+		table.clear(names)
+		pcall(function()
+			if listfiles then
+				for _, e in listfiles(folder .. "/*") do
+					local n = e.Name:match("([^/\\]+)%.json$")
+					if n then
+						names[#names + 1] = n
+					end
+				end
+			end
+		end)
+		pcall(function()
+			local st = settings()
+			if st.PegasusConfigs then
+				for p in st.PegasusConfigs do
+					local n = p:match("([^/\\]+)%.json$")
+					if n and not table.find(names, n) then
+						names[#names + 1] = n
+					end
+				end
+			end
+		end)
+		if #names == 0 then
+			names = { "default", "fallen hvv 3.001", "no recoil cfg" }
+		end
+		table.sort(names)
+		refresh()
+	end
+	scan()
+
+	search:GetPropertyChangedSignal("Text"):Connect(function()
+		filterText = search.Text
+		refresh()
+	end)
+
+	local function actionBtn(label, order, fn)
+		local b = make("TextButton", {
+			Name = "Btn_" .. label, LayoutOrder = order, Size = UDim2.new(1, -16, 0, 21), Position = UDim2.fromOffset(8, 182 + (order - 1) * 23),
+			BackgroundColor3 = theme.Inline, BackgroundTransparency = 0.42, BorderSizePixel = 0, Corner = UDim.new(0, 3),
+			AutoButtonColor = false, Font = theme.Font, TextSize = 13, RichText = true, Text = esc(label), TextColor3 = theme.Text,
+			TextTransparency = 0.08, ZIndex = 6,
+			Stroke = { Thickness = 1, Color = theme.Border, Transparency = theme.BorderT },
+		}, gbx.Rows)
+		b.MouseButton1Click:Connect(function()
+			tween(b, 0.06, { BackgroundTransparency = 0.15 })
+			task.delay(0.06, function()
+				tween(b, 0.12, { BackgroundTransparency = 0.42 })
+			end)
+			fn(b)
+		end)
+		return b
+	end
+	gbx._n += 2
+
+	nameBox:GetPropertyChangedSignal("Text"):Connect(function()
+		if #nameBox.Text > 0 then
+			local found = false
+			for _, n in names do
+				if n == nameBox.Text then
+					found = true
+				end
+			end
+			if not found then
+				selName = nil
+			end
+		end
+	end)
+
+	actionBtn("Create", 1, function()
+		local name = (nameBox.Text:gsub("^%s+", ""):gsub("%s+$", ""))
+		if #name == 0 then
+			w:Notify("Config name is empty", 2.2, "pegasus.tech")
+			return
+		end
+		names[#names + 1] = name
+		table.sort(names)
+		selName = name
+		refresh()
+		w:Notify("Created " .. name, 2.2, "pegasus.tech")
+	end)
+	actionBtn("Delete", 2, function()
+		if not selName then
+			return
+		end
+		for i, n in names do
+			if n == selName then
+				table.remove(names, i)
+				break
+			end
+		end
+		pcall(function()
+			if isfile and isfile(path(selName)) then
+				delfile(path(selName))
+			end
+			local st = settings()
+			if st.PegasusConfigs then
+				st.PegasusConfigs[path(selName)] = nil
+			end
+		end)
+		selName = nil
+		refresh()
+		w:Notify("Deleted config", 2.2, "pegasus.tech")
+	end)
+	actionBtn("Load", 3, function()
+		local name = selName or nameBox.Text
+		local data = read(name)
+		if data then
+			applyConfig(w, decodeFlags(data))
+			w:Notify("Loaded " .. name, 2.2, "pegasus.tech")
+		else
+			w:Notify("Config not found: " .. tostring(name), 2.2, "pegasus.tech")
+		end
+	end)
+	actionBtn("Save", 4, function()
+		local name = nameBox.Text
+		if #name == 0 then
+			w:Notify("Config name is empty", 2.2, "pegasus.tech")
+			return
+		end
+		pcall(function()
+			if isfolder and not isfolder("pegasus-ui") then
+				makefolder("pegasus-ui")
+			end
+			if isfolder and not isfolder(folder) then
+				makefolder(folder)
+			end
+		end)
+		writeFile(path(name), encodeFlags(w._flags))
+		if not table.find(names, name) then
+			names[#names + 1] = name
+			table.sort(names)
+		end
+		refresh()
+		w:Notify("Saved " .. name, 2.2, "pegasus.tech")
+	end)
+	api:Refresh()
+	gbx.Refresh = function()
+		scan()
+	end
+	sub(function(t)
+		nameBox.TextColor3 = t.Text
+		search.TextColor3 = t.Text
+		list.ScrollBarImageColor3 = t.Accent
+	end)
+	return api
+end
+
+local function addMenuBind(gbx, text, opts)
+	opts = opts or {}
+	local w = gbx.Window
+	local row = addKeyPicker(gbx, text or "Menu Bind", {
+		Default = w._toggleKey,
+		Mode = "Toggle",
+		Callback = function(key)
+			w:SetToggleKey(key)
+			if opts.Callback then
+				task.spawn(opts.Callback, key)
+			end
+		end,
+	})
+	row.IsMenuBind = true
+	local oldSet = row.Set
+	function row:Set(v, silent)
+		oldSet(row, v, silent)
+		w:SetToggleKey(v)
+	end
+	return row
+end
+
+gb.AddPlayerList = function(gbx, opts)
+	return addPlayerList(gbx, opts or {})
+end
+gb.AddConfigList = function(gbx, opts)
+	return addConfigList(gbx, opts or {})
+end
+gb.AddMenuBind = function(gbx, text, opts)
+	return addMenuBind(gbx, text, opts)
+end
+gb.SetSearch = function(gbx, on)
+	gbx._search = on
+end
+gb.GetElement = function(gbx, name)
+	for _, row in gbx.Window._rows do
+		if row.Section == gbx and (row.Text == name or row.Flag == name) then
+			return row
+		end
+	end
+end
+
+function PegasusUI.Destroy()
+	if PegasusUI._gui then
+		PegasusUI._gui:Destroy()
+		PegasusUI._gui = nil
+	end
+end
+
+return PegasusUI

@@ -1,0 +1,291 @@
+-- Pegasus UI v1.1 -- pegasus_example.lua (executor, no Studio needed)
+-- paste this whole file into your executor, or host both files on GitHub and use loader.lua
+
+local GITHUB = "https://raw.githubusercontent.com/USER/REPO/main"   -- << set this
+
+local PegasusUI
+if syn and syn.request then
+	PegasusUI = loadstring(syn.request({ Url = GITHUB .. "/pegasus_ui.lua" }).Body)()
+elseif request then
+	PegasusUI = loadstring(request({ Url = GITHUB .. "/pegasus_ui.lua", Method = "GET" }).Body)()
+elseif game.HttpGet then
+	PegasusUI = loadstring(game:HttpGet(GITHUB .. "/pegasus_ui.lua"))()
+else
+	error("no http function available -- paste pegasus_ui.lua above this file instead")
+end
+
+local window = PegasusUI.Window({
+	Title = "pegasus.tech",
+	Version = "v7n",
+	Size = Vector2.new(730, 402),
+	Keybind = Enum.KeyCode.RightShift,
+	Resizable = true, -- drag the bottom-right grip (mouse or touch)
+	ToggleButton = "auto", -- floating menu button on touch devices
+	MobileAutoCompact = true, -- opens thumb-sized on phones
+})
+
+local OPTIONS = {
+	aim = { "None", "Mouse", "Keyboard", "Hybrid" },
+	cond = { "None", "Visible", "Crosshair", "FOV", "Health under" },
+	method = { "Mouse", "Closest", "Nearest to crosshair" },
+	smooth = { "Linear", "Smooth", "Ease In Out", "Bezier", "Snap" },
+	manip = { "None", "Recoil", "Spread", "Camera Jitter" },
+	wall = { "None", "Low", "Medium", "High", "Ultra" },
+	pos = { "Mouse", "Center", "Crosshair" },
+	target = { "Smart", "Closest", "Visible", "Random" },
+	rarity = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Any" },
+	surface = { "Fade", "ForceField", "Outline", "Flat" },
+	sounds = { "Default", "Pick", "Marble", "Blip", "None" },
+	colorMode = { "Team", "Distance", "Health", "Custom" },
+	origin = { "Bottom", "Center", "Crosshair" },
+	graphics = { "Automatic", "DirectX 11", "Metal", "Vulkan", "OpenGL" },
+	themes = { "Default", "Pegasus Night", "Carbon", "Halo", "Ashen", "Midnight" },
+}
+
+---------------------------------------------------------------------
+-- COMBAT
+---------------------------------------------------------------------
+local Combat = window:AddTab("Combat")
+
+local Aimbot = Combat:AddLeftGroupbox("Aimbot")
+Aimbot:AddDropdown("Aim Assist", { Options = OPTIONS.aim, Default = "None", Swatch = true, SwatchColor = Color3.fromRGB(224, 69, 90) })
+Aimbot:AddSlider("Prediction", { Min = 0, Max = 1, Default = 0.25, Increment = 0.05, Suffix = "s", Decimals = 2 })
+Aimbot:AddToggle("Hitpart Head", { Default = false, HoverContent = "aim at the head while inside the fov" })
+Aimbot:AddDropdown("Conditions", { Options = OPTIONS.cond, Default = "None" })
+Aimbot:AddToggle("AI Memory", { Default = false, Indent = 1 })
+Aimbot:AddDropdown("Aim Method", { Options = OPTIONS.method, Default = "Mouse" })
+Aimbot:AddDropdown("Smooth Method", {
+	Options = OPTIONS.smooth,
+	Default = "Linear",
+	Callback = function(value)
+		-- the "effect": which animation the tab switch uses
+		window:Notify("Tab effect -> " .. tostring(value), 2.2, "pegasus.tech")
+	end,
+})
+Aimbot:AddSlider("Humanizer Smoothness", { Min = 0, Max = 1, Default = 0.05, Increment = 0.05, Suffix = "s", Decimals = 2 })
+Aimbot:AddDropdown("Manipulation", { Options = OPTIONS.manip, Default = "None", Swatch = true, SwatchColor = Color3.fromRGB(224, 69, 90) })
+Aimbot:AddSlider("Range", { Min = 0, Max = 1000, Default = 340, Increment = 1, Suffix = "px" })
+
+local Guns = Combat:AddRightGroupbox("Gun Mods")
+Guns:AddToggle("Remove Recoil", { Indent = 1, Keybind = Enum.KeyCode.T })
+Guns:AddToggle("Remove Spread", { Indent = 1 })
+Guns:AddToggle("RapidFire", { Indent = 1 })
+Guns:AddSlider("Multiplier", { Min = 0.5, Max = 5, Default = 1, Increment = 0.1, Suffix = "x", Decimals = 1 })
+Guns:AddToggle("Remove Shake", { Indent = 1 })
+Guns:AddToggle("Remove Bobbing", { Indent = 1 })
+Guns:AddToggle("Remove Shoot Restrictions", { Indent = 1 })
+Guns:AddToggle("Instant Eoka", { Indent = 1 })
+Guns:AddToggle("Instant Bullet", { Indent = 1 })
+Guns:AddToggle("Instant Equip", { Indent = 1, Default = true })
+Guns:AddToggle("Instant Aim", { Indent = 1 })
+Guns:AddToggle("Force Automatic", { Indent = 1 })
+Guns:AddToggle("Shoot While Driving / Flying", { Indent = 1 })
+
+local Melee = Combat:AddRightGroupbox("Melee Mods")
+Melee:AddToggle("Instant Throw", { Indent = 1 })
+Melee:AddToggle("Extend Range", { Indent = 1 })
+Melee:AddToggle("Fast Hit", { Indent = 1 })
+
+local Wallbang = Combat:AddRightGroupbox("Wallbang")
+Wallbang:AddDropdown("Intensity", { Options = OPTIONS.wall, Default = "None", Swatch = true, SwatchColor = Color3.new(1, 1, 1) })
+Wallbang:AddSlider("Range", { Min = 0, Max = 100, Default = 60, Increment = 1 })
+Wallbang:AddSlider("Depth", { Min = 0, Max = 10, Default = 3, Increment = 0.1, Suffix = "m", Decimals = 1 })
+Wallbang:AddDropdown("Targeting Method", { Options = OPTIONS.target, Default = "Smart" })
+
+local CombatMisc = Combat:AddRightGroupbox("Misc")
+CombatMisc:AddToggle("FOV Circle", { Indent = 1, Default = true })
+CombatMisc:AddToggle("Glow", { Indent = 1, Default = true })
+CombatMisc:AddSlider("Glow Amount", { Min = 0, Max = 40, Default = 16, Increment = 1, Suffix = "px" })
+CombatMisc:AddToggle("Rotate Fill", { Indent = 1 })
+CombatMisc:AddSlider("Radius", { Min = 0, Max = 400, Default = 180, Increment = 1, Suffix = "px" })
+CombatMisc:AddDropdown("Position", { Options = OPTIONS.pos, Default = "Mouse" })
+CombatMisc:AddToggle("Underground Resolver", { Indent = 1 })
+CombatMisc:AddToggle("Knifebot", { Indent = 1 })
+
+---------------------------------------------------------------------
+-- VISUALS
+---------------------------------------------------------------------
+local Visuals = window:AddTab("Visuals")
+
+local Esp = Visuals:AddLeftGroupbox("Player ESP")
+Esp:AddToggle("Box ESP", { Indent = 1, Default = true })
+Esp:AddToggle("Corner Box", { Indent = 1 })
+Esp:AddToggle("Name", { Indent = 1, Default = true })
+Esp:AddToggle("Distance", { Indent = 1, Default = true })
+Esp:AddToggle("Health", { Indent = 1, Default = true })
+Esp:AddToggle("Skeleton", { Indent = 1 })
+Esp:AddToggle("Snapped", { Indent = 1 })
+Esp:AddDropdown("Color Mode", { Options = OPTIONS.colorMode, Default = "Team" })
+Esp:AddColorpicker("Visible Color", { Default = Color3.fromRGB(169, 196, 238) })
+Esp:AddColorpicker("Hidden Color", { Default = Color3.fromRGB(224, 69, 90) })
+Esp:AddSlider("Max Distance", { Min = 0, Max = 2000, Default = 900, Increment = 10, Suffix = "m" })
+
+local Snap = Visuals:AddLeftGroupbox("Snapshot")
+Snap:AddToggle("Inventory Panel", { Indent = 1, Default = true, Keybind = Enum.KeyCode.One, KeybindMode = "Hold" })
+Snap:AddDropdown("Refresh Rate", { Options = { "1x", "2x", "4x" }, Default = "1x" })
+Snap:AddSlider("Panel Scale", { Min = 0.5, Max = 2, Default = 1, Increment = 0.05, Suffix = "x", Decimals = 2 })
+
+local Tracers = Visuals:AddLeftGroupbox("Tracers")
+Tracers:AddToggle("Tracers", { Indent = 1 })
+Tracers:AddDropdown("Origin", { Options = OPTIONS.origin, Default = "Bottom" })
+Tracers:AddColorpicker("Tracer Color", { Default = Color3.fromRGB(169, 196, 238) })
+
+local World = Visuals:AddRightGroupbox("World ESP")
+World:AddToggle("Loot Names", { Indent = 1, Default = true })
+World:AddToggle("Loot Distance", { Indent = 1 })
+World:AddDropdown("Rarity Filter", { Options = OPTIONS.rarity, Default = "Common" })
+World:AddMultiDropdown("Extra Rarity", { Options = { "Rare", "Epic", "Legendary" } })
+World:AddToggle("Camp Markers", { Indent = 1, Default = true })
+World:AddToggle("Airdrop ESP", { Indent = 1, Default = true })
+World:AddSlider("Loot Scale", { Min = 0.5, Max = 2.5, Default = 1, Increment = 0.05, Suffix = "x", Decimals = 2 })
+
+local Chams = Visuals:AddRightGroupbox("Chams")
+Chams:AddToggle("Material", { Indent = 1 })
+Chams:AddDropdown("Surface Type", { Options = OPTIONS.surface, Default = "Fade" })
+Chams:AddColorpicker("Cham Color", { Default = Color3.fromRGB(126, 166, 232) })
+Chams:AddSlider("Transparency", { Min = 0, Max = 1, Default = 0.35, Increment = 0.01, Decimals = 2 })
+
+local Overlay = Visuals:AddRightGroupbox("Overlays")
+Overlay:AddToggle("Crosshair", { Indent = 1, Default = true })
+Overlay:AddSlider("Gap", { Min = 0, Max = 20, Default = 4, Increment = 1, Suffix = "px" })
+Overlay:AddToggle("Hit Sound", { Indent = 1 })
+Overlay:AddDropdown("Hit Sound Pack", { Options = OPTIONS.sounds, Default = "Default" })
+Overlay:AddColorpicker("Overlay Color", { Default = Color3.new(1, 1, 1) })
+Overlay:AddParagraph("Note", { Text = "UI demo only -- every widget here stores a value and fires a callback." })
+
+---------------------------------------------------------------------
+-- MISC
+---------------------------------------------------------------------
+local Misc = window:AddTab("Misc")
+
+local Move = Misc:AddLeftGroupbox("Movement")
+Move:AddToggle("SprintHack", { Indent = 1 })
+Move:AddSlider("Speed", { Min = 0, Max = 120, Default = 24, Increment = 0.5, Suffix = "x", Decimals = 1 })
+Move:AddToggle("Flight", { Indent = 1 })
+Move:AddSlider("Flight Speed", { Min = 0, Max = 200, Default = 60, Increment = 0.5 })
+Move:AddToggle("Infinite Fly", { Indent = 1 })
+Move:AddToggle("Infinite Jump", { Indent = 1, Default = true })
+Move:AddToggle("NoFall Damage", { Indent = 1 })
+
+local Exploits = Misc:AddLeftGroupbox("Exploits")
+Exploits:AddToggle("Infinite Loot", { Indent = 1 })
+Exploits:AddToggle("Silent Walk", { Indent = 1 })
+Exploits:AddToggle("Unbreakable Guns", { Indent = 1 })
+Exploits:AddToggle("Disable Stamina", { Indent = 1 })
+Exploits:AddToggle("Disable Fall Damage", { Indent = 1 })
+Exploits:AddToggle("Disable Hunger", { Indent = 1 })
+
+local Util = Misc:AddRightGroupbox("Utility")
+Util:AddButton("Open Roblox G", { Value = "Open", Callback = function() window:Notify("Nothing happens -- this is a UI demo") end })
+Util:AddButton("Full Screen", { Value = "Toggle" })
+Util:AddButton("Set FPS Cap", { Value = "360" })
+Util:AddButton("Unlock FPS", { Value = "On" })
+Util:AddDropdown("Graphics Mode", { Options = OPTIONS.graphics, Default = "Automatic" })
+Util:AddButton("Rejoin Server", { Value = "Rejoin" })
+Util:AddSlider("UI Scale", { Min = 0.6, Max = 1.6, Default = 1, Increment = 0.02, Suffix = "x", Decimals = 2 })
+
+local Notif = Misc:AddRightGroupbox("Notifies")
+Notif:AddToggle("Enable Notifies", { Indent = 1, Default = true })
+Notif:AddSlider("Duration", { Min = 1, Max = 8, Default = 2.5, Increment = 0.5, Suffix = "s", Decimals = 1 })
+Notif:AddDropdown("Sound", { Options = { "Default", "None" }, Default = "None" })
+Notif:AddColorpicker("Notify Color", { Default = Color3.fromRGB(169, 196, 238) })
+
+---------------------------------------------------------------------
+-- PLAYERS
+---------------------------------------------------------------------
+local PlayersTab = window:AddTab("Players")
+local list = PlayersTab:AddLeftGroupbox("Players")
+list:SetFill(true) -- stretch to the column, like the reference
+list:AddPlayerList({
+	SaveTag = true,
+	Entries = {
+		{ Name = "Seo", Handle = "ab7Xrq", Tag = "Neutral" },
+		{ Name = "Joe", Handle = "abjba_1", Tag = "Neutral" },
+		{ Name = "SK2", Handle = "Aj0xwo279", Tag = "Neutral" },
+		{ Name = "alexminecraftblob", Tag = "Neutral" },
+		{ Name = "No_chat", Handle = "among_as0199", Tag = "Neutral" },
+		{ Name = "Sky", Handle = "ananastop456", Tag = "Neutral" },
+		{ Name = "40fps_1d", Handle = "angies_Lopg", Tag = "Neutral" },
+	},
+	Callback = function(entry, tag)
+		window:Notify(tostring(entry.Name) .. " -> " .. tag, 2.2, "pegasus.tech", nil)
+	end,
+})
+
+local Actions = PlayersTab:AddRightGroupbox("Actions")
+Actions:AddToggle("Target Closest", { Indent = 1 })
+Actions:AddDropdown("Target Hitpart", { Options = { "Head", "HumanoidRootPart", "Torso", "Closest" }, Default = "Head" })
+Actions:AddDropdown("Ignore Mode", { Options = { "None", "Neutral", "Friendly" }, Default = "Neutral" })
+Actions:AddSlider("Player List Height", { Min = 120, Max = 320, Default = 240, Increment = 2, Suffix = "px" })
+Actions:AddButton("Refresh List", { Value = "Update", Callback = function() list:Refresh() window:Notify("Player list refreshed") end })
+
+local Tags = PlayersTab:AddRightGroupbox("Tags")
+Tags:AddColorpicker("Friendly", { Default = Color3.fromRGB(126, 201, 143) })
+Tags:AddColorpicker("Enemy", { Default = Color3.fromRGB(224, 69, 90) })
+Tags:AddColorpicker("Neutral", { Default = Color3.new(1, 1, 1) })
+Tags:AddToggle("Auto Tag Streaming", { Indent = 1 })
+
+---------------------------------------------------------------------
+-- SETTINGS
+---------------------------------------------------------------------
+local Settings = window:AddTab("Settings")
+
+local Configs = Settings:AddLeftGroupbox("Configs")
+Configs:SetSearch(true) -- "Search.." bar above the list
+Configs:AddConfigList({ DefaultName = "testaaaa d" })
+Configs:AddButton("Create", { Full = true })
+Configs:AddButton("Delete", { Full = true })
+Configs:AddButton("Load", { Full = true })
+Configs:AddButton("Save", { Full = true })
+
+local Theme = Settings:AddRightGroupbox("Theming")
+Theme:AddColorpicker("Outline", { Default = Color3.new(1, 1, 1) })
+Theme:AddColorpicker("Text", { Default = Color3.new(1, 1, 1) })
+Theme:AddColorpicker("Hovered Element", { Default = Color3.fromRGB(38, 38, 45) })
+Theme:AddColorpicker("Inline", { Default = Color3.fromRGB(26, 26, 31) })
+Theme:AddColorpicker("Text Stroke", { Default = Color3.new(0, 0, 0) })
+Theme:AddColorpicker("Border", { Default = Color3.new(1, 1, 1) })
+Theme:AddColorpicker("Text Inactive", { Default = Color3.fromRGB(107, 107, 112) })
+Theme:AddColorpicker("Element", { Default = Color3.fromRGB(16, 16, 19) })
+Theme:AddColorpicker("Background", { Default = Color3.fromRGB(11, 11, 13) })
+Theme:AddColorpicker("Risky", { Default = Color3.fromRGB(224, 69, 90) })
+Theme:AddColorpicker("Accent", {
+	Default = Color3.fromRGB(169, 196, 238),
+	Callback = function(c3)
+		PegasusUI.SetTheme({ Accent = c3 })
+	end,
+})
+Theme:AddDropdown("Themes", {
+	Options = OPTIONS.themes,
+	Default = "Default",
+	Callback = function(name)
+		PegasusUI.SetTheme(PegasusUI.Presets[name] or {})
+		window:Notify("Theme: " .. tostring(name))
+	end,
+})
+Theme:AddButton("Save Theme", { Full = true, Callback = function() window:Notify("Theme saved") end })
+Theme:AddButton("Load Theme", { Full = true, Callback = function() window:Notify("Theme loaded") end })
+Theme:AddMenuBind("Menu Bind", { Default = Enum.KeyCode.RightShift })
+
+---------------------------------------------------------------------
+-- keybinds overlay (the bottom-left list in the video)
+---------------------------------------------------------------------
+window:ShowKeybinds(true)
+
+---------------------------------------------------------------------
+-- programmatic API, a few examples
+---------------------------------------------------------------------
+local prediction = window:GetElement("Prediction")
+if prediction then
+	task.spawn(function()
+		task.wait(6)
+		prediction:Set(0.5) -- works on every element: Set / Get / Destroy / SetKey
+	end)
+end
+
+task.spawn(function()
+	task.wait(9)
+	window:Notify("Configs live in workspace/pegasus-ui/configs", 4, "pegasus.tech", "1/1")
+end)
+
+return window

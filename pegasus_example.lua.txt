@@ -1,7 +1,7 @@
 -- Pegasus UI v1.1 -- pegasus_example.lua (executor, no Studio needed)
 -- paste this whole file into your executor, or host both files on GitHub and use loader.lua
 
-local GITHUB = "https://raw.githubusercontent.com/USER/REPO/main"   -- << set this
+local GITHUB = "https://raw.githubusercontent.com/kaissbgg69-web/fuzzy-succotash/refs/heads/main/pegasus_ui.lua.txt"   -- << set this
 
 local PegasusUI
 if syn and syn.request then
